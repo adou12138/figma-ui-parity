@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "parity defect",
+  "type": "object",
+  "required": ["fingerprint", "dimension", "severity", "confidence", "status", "symptom", "expected", "actual", "element"],
+  "properties": {
+    "id": {"type": "string"},
+    "fingerprint": {"type": "string", "minLength": 8, "description": "page|scenario|element|dimension|viewport，跨层合并同一问题"},
+    "dimension": {"type": "string", "description": "检查维度编号 7.x，取自 references/check-dimensions.md"},
+    "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "status": {"enum": ["confirmed", "pending", "notRun", "dataMissing"]},
+    "page": {"type": "string"},
+    "scenario": {"type": "string"},
+    "viewport": {"type": ["string", "number", "null"]},
+    "module": {"type": "string", "description": "缺陷所在功能区块，对应缺陷表 D 列"},
+    "category": {"type": "string", "description": "缺陷类型，对应缺陷表 C 列，建议格式 dimension|属性族"},
+    "symptom": {"type": "string", "minLength": 4, "description": "用户可见现象，必须成句，不能只写指标"},
+    "expected": {"type": "string", "minLength": 1},
+    "actual": {"type": "string", "minLength": 1},
+    "delta": {"type": ["number", "null"]},
+    "tolerance": {"type": ["number", "null"]},
+    "suggestion": {"type": "string", "description": "可执行的修复建议"},
+    "element": {
+      "type": "object",
+      "required": ["selector", "bbox"],
+      "properties": {
+        "selector": {"type": "string"},
+        "nth": {"type": "integer", "minimum": 0},
+        "bbox": {"type": "object", "required": ["x", "y", "w", "h"], "properties": {
+          "x": {"type": "number"}, "y": {"type": "number"}, "w": {"type": "number"}, "h": {"type": "number"}}},
+        "anchor": {"type": "string"},
+        "frame": {"type": "string"}
+      }
+    },
+    "designRef": {"type": "object", "properties": {"nodeId": {"type": "string"}, "path": {"type": "string"}, "fileKey": {"type": "string"}}},
+    "evidence": {"type": "array", "items": {"type": "object", "properties": {
+      "type": {"type": "string"}, "result": {"type": "string"}, "artifact": {"type": "string"}, "property": {"type": "string"}}}},
+    "reproduction": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "sources": {"type": "array", "items": {"type": "string"}},
+    "acceptedDeviation": {"type": "object", "description": "已确认偏差，必须带到期时间，过期自动失效", "properties": {
+      "reason": {"type": "string"}, "expiresAt": {"type": "string"}, "reviewedAt": {"type": "string"}}}
+  }
+}

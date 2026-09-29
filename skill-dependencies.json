@@ -1,0 +1,438 @@
+{
+  "schema_version": "1",
+  "capabilities": [
+    "design-model",
+    "page-extraction",
+    "pixel-diff",
+    "style-diff",
+    "interaction-audit",
+    "accessibility-audit",
+    "responsive-audit",
+    "scenario-generation",
+    "baseline-regression",
+    "report-export"
+  ],
+  "dependencies": [
+    {
+      "id": "figma-source",
+      "type": "api",
+      "required": true,
+      "auth_type": "token",
+      "capabilities": [
+        "design-model",
+        "pixel-diff"
+      ],
+      "checks": [
+        {
+          "id": "figma-auth",
+          "type": "auth_probe",
+          "required": true,
+          "target": "Figma REST API"
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://www.figma.com/",
+        "official_docs_url": "https://www.figma.com/developers/api",
+        "login_url": "https://www.figma.com/login",
+        "credential_url": "https://www.figma.com/settings",
+        "console_path": [
+          "Account settings",
+          "Personal access tokens"
+        ],
+        "scopes": [
+          "read-only design access"
+        ],
+        "credential_storage": "受信任的 WorkBuddy MCP 配置",
+        "steps": [
+          "在官方账户设置创建只读 token",
+          "写入受信任配置",
+          "运行只读探测"
+        ],
+        "verify": "只读用户探测返回成功且不回显 token",
+        "rotate_or_revoke": "在官方账户设置轮换或撤销 token",
+        "security": "最小权限、只读、报告脱敏",
+        "verified_at": "2026-09-22",
+        "applies_to_version": "Figma REST API current"
+      },
+      "degradation": [
+        {
+          "capability": "design-model",
+          "trigger": "Figma source unavailable",
+          "fallback": "user-provided design JSON/PNG",
+          "user_input": "可信设计导出",
+          "limitations": "无法确认完整节点属性",
+          "evidence_label": "未验证",
+          "recovery": "恢复 Figma source",
+          "stop_condition": "没有可信设计数据"
+        },
+        {
+          "capability": "pixel-diff",
+          "trigger": "Figma image unavailable",
+          "fallback": "node and style comparison",
+          "user_input": "设计节点数据",
+          "limitations": "无法进行图像级结论",
+          "evidence_label": "部分验证",
+          "recovery": "恢复设计图片",
+          "stop_condition": "无设计参照"
+        }
+      ]
+    },
+    {
+      "id": "playwright",
+      "type": "mcp",
+      "required": true,
+      "auth_type": "browser-login",
+      "capabilities": [
+        "page-extraction",
+        "interaction-audit",
+        "accessibility-audit",
+        "responsive-audit"
+      ],
+      "checks": [
+        {
+          "id": "playwright-register",
+          "type": "mcp",
+          "required": true,
+          "server": "playwright"
+        },
+        {
+          "id": "playwright-capability",
+          "type": "mcp_probe",
+          "required": true,
+          "target": "browser_navigate and browser_evaluate"
+        },
+        {
+          "id": "playwright-auth",
+          "type": "auth_probe",
+          "required": true,
+          "target": "authorized browser session"
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://playwright.dev/",
+        "official_docs_url": "https://playwright.dev/docs",
+        "login_url": "https://playwright.dev/docs/auth",
+        "credential_storage": "workspace storage state or manual browser session",
+        "steps": [
+          "确认浏览器能力已连接",
+          "恢复已有 storage state 或人工登录",
+          "运行目标页登录态检查"
+        ],
+        "verify": "页面可访问且登录态检测通过",
+        "rotate_or_revoke": "删除 workspace storage state 并重新人工登录",
+        "security": "不自动填写密码和验证码",
+        "verified_at": "2026-09-22",
+        "applies_to_version": "Playwright MCP current",
+        "console_path": [
+          "Browser session",
+          "Storage state"
+        ]
+      },
+      "degradation": [
+        {
+          "capability": "page-extraction",
+          "trigger": "browser capability unavailable",
+          "fallback": "static DOM audit",
+          "user_input": "可访问页面或 DOM 导出",
+          "limitations": "运行时状态未验证",
+          "evidence_label": "未验证",
+          "recovery": "恢复 Playwright",
+          "stop_condition": "没有页面数据"
+        },
+        {
+          "capability": "interaction-audit",
+          "trigger": "no authorized session",
+          "fallback": "static control audit",
+          "user_input": "storage state 或人工登录",
+          "limitations": "点击生效未验证",
+          "evidence_label": "未验证",
+          "recovery": "恢复授权 session",
+          "stop_condition": "受保护页面无法访问"
+        },
+        {
+          "capability": "accessibility-audit",
+          "trigger": "page script unavailable",
+          "fallback": "static aria and label audit",
+          "user_input": "DOM",
+          "limitations": "键盘行为未验证",
+          "evidence_label": "部分验证",
+          "recovery": "恢复 evaluate",
+          "stop_condition": "没有 DOM"
+        },
+        {
+          "capability": "responsive-audit",
+          "trigger": "resize unavailable",
+          "fallback": "current viewport health check",
+          "user_input": "支持 resize 的浏览器",
+          "limitations": "跨断点未验证",
+          "evidence_label": "未验证",
+          "recovery": "恢复 resize",
+          "stop_condition": "没有截图"
+        }
+      ]
+    },
+    {
+      "id": "visual-parity",
+      "type": "mcp",
+      "required": false,
+      "auth_type": "none",
+      "capabilities": [
+        "pixel-diff",
+        "style-diff"
+      ],
+      "checks": [
+        {
+          "id": "visual-register",
+          "type": "mcp",
+          "required": false,
+          "server": "visual-parity"
+        },
+        {
+          "id": "visual-compare",
+          "type": "mcp_probe",
+          "required": true,
+          "target": "compare_pages"
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://playwright.dev/",
+        "official_docs_url": "https://playwright.dev/docs/screenshots",
+        "steps": [
+          "确认 visual comparison capability 已连接",
+          "运行 compare_pages 探测"
+        ],
+        "verify": "compare_pages 返回结构化 diff",
+        "security": "截图仅写入 workspace",
+        "verified_at": "2026-09-22",
+        "applies_to_version": "host-provided capability"
+      },
+      "degradation": [
+        {
+          "capability": "pixel-diff",
+          "trigger": "visual-parity unavailable",
+          "fallback": "Playwright screenshots and computed styles",
+          "user_input": "无",
+          "limitations": "无像素级结论",
+          "evidence_label": "部分验证",
+          "recovery": "恢复 visual-parity",
+          "stop_condition": "没有截图和样式数据"
+        },
+        {
+          "capability": "style-diff",
+          "trigger": "style fields missing",
+          "fallback": "compare observable fields",
+          "user_input": "无",
+          "limitations": "部分字段待确认",
+          "evidence_label": "部分验证",
+          "recovery": "补齐提取数据",
+          "stop_condition": "核心字段全部缺失"
+        }
+      ]
+    },
+    {
+      "id": "python-runtime",
+      "type": "runtime",
+      "required": true,
+      "auth_type": "none",
+      "capabilities": [
+        "scenario-generation",
+        "baseline-regression",
+        "report-export"
+      ],
+      "checks": [
+        {
+          "id": "python",
+          "type": "python",
+          "required": true,
+          "min_version": "3.10"
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://www.python.org/",
+        "official_docs_url": "https://docs.python.org/3/",
+        "steps": [
+          "安装 Python 3.10 或更高版本",
+          "运行环境检查"
+        ],
+        "verify": "python --version 满足最低版本",
+        "security": "不读取凭据",
+        "verified_at": "2026-09-22",
+        "applies_to_version": "Python 3.10+"
+      },
+      "degradation": [
+        {
+          "capability": "scenario-generation",
+          "trigger": "Python unavailable",
+          "fallback": "fixed baseline scenario list",
+          "user_input": "无",
+          "limitations": "场景覆盖减少",
+          "evidence_label": "部分验证",
+          "recovery": "恢复 Python",
+          "stop_condition": "无法生成场景"
+        },
+        {
+          "capability": "baseline-regression",
+          "trigger": "Python unavailable",
+          "fallback": "manual JSON comparison",
+          "user_input": "无",
+          "limitations": "无自动回归摘要",
+          "evidence_label": "未验证",
+          "recovery": "恢复 Python",
+          "stop_condition": "无法读取基线"
+        },
+        {
+          "capability": "report-export",
+          "trigger": "Python unavailable",
+          "fallback": "JSON and HTML",
+          "user_input": "无",
+          "limitations": "CSV 可能缺失",
+          "evidence_label": "部分验证",
+          "recovery": "恢复 Python",
+          "stop_condition": "输出目录不可写"
+        }
+      ]
+    },
+    {
+      "id": "report-export",
+      "type": "local-tool",
+      "required": false,
+      "auth_type": "none",
+      "capabilities": [
+        "report-export"
+      ],
+      "checks": [
+        {
+          "id": "output-writable",
+          "type": "file",
+          "required": false,
+          "path": "./parity-test/reports"
+        }
+      ],
+      "setup": {
+        "official_home_url": "https://docs.python.org/3/library/csv.html",
+        "official_docs_url": "https://docs.python.org/3/library/csv.html",
+        "steps": [
+          "确认 workspace 输出目录可写"
+        ],
+        "verify": "创建并删除只读探测文件",
+        "security": "仅写 workspace 输出目录",
+        "verified_at": "2026-09-22",
+        "applies_to_version": "current workspace"
+      },
+      "degradation": [
+        {
+          "capability": "report-export",
+          "trigger": "output directory unavailable",
+          "fallback": "emit structured JSON to stdout",
+          "user_input": "无",
+          "limitations": "没有文件报告",
+          "evidence_label": "部分验证",
+          "recovery": "恢复写权限",
+          "stop_condition": "无法输出结果"
+        }
+      ]
+    }
+  ],
+  "functional_degradations": [
+    {
+      "capability": "design-model",
+      "trigger": "Figma source unavailable",
+      "fallback": "user-provided design JSON/PNG",
+      "user_input": "可信设计导出",
+      "limitations": "无法确认完整节点属性",
+      "evidence_label": "未验证",
+      "recovery": "恢复 Figma source",
+      "stop_condition": "没有可信设计数据"
+    },
+    {
+      "capability": "page-extraction",
+      "trigger": "browser unavailable",
+      "fallback": "static DOM audit",
+      "user_input": "页面或 DOM 导出",
+      "limitations": "运行时状态未验证",
+      "evidence_label": "未验证",
+      "recovery": "恢复 Playwright",
+      "stop_condition": "没有页面数据"
+    },
+    {
+      "capability": "pixel-diff",
+      "trigger": "pixel engine unavailable",
+      "fallback": "screenshots and styles",
+      "user_input": "无",
+      "limitations": "无像素级结论",
+      "evidence_label": "部分验证",
+      "recovery": "恢复 visual-parity",
+      "stop_condition": "没有视觉数据"
+    },
+    {
+      "capability": "style-diff",
+      "trigger": "style data incomplete",
+      "fallback": "observable fields only",
+      "user_input": "无",
+      "limitations": "部分字段待确认",
+      "evidence_label": "部分验证",
+      "recovery": "补齐提取数据",
+      "stop_condition": "核心字段缺失"
+    },
+    {
+      "capability": "interaction-audit",
+      "trigger": "no authorized session",
+      "fallback": "static controls",
+      "user_input": "storage state 或人工登录",
+      "limitations": "点击生效未验证",
+      "evidence_label": "未验证",
+      "recovery": "恢复 session",
+      "stop_condition": "页面不可访问"
+    },
+    {
+      "capability": "accessibility-audit",
+      "trigger": "evaluate unavailable",
+      "fallback": "static aria checks",
+      "user_input": "DOM",
+      "limitations": "键盘行为未验证",
+      "evidence_label": "部分验证",
+      "recovery": "恢复 evaluate",
+      "stop_condition": "没有 DOM"
+    },
+    {
+      "capability": "responsive-audit",
+      "trigger": "resize unavailable",
+      "fallback": "current viewport check",
+      "user_input": "支持 resize 的浏览器",
+      "limitations": "跨断点未验证",
+      "evidence_label": "未验证",
+      "recovery": "恢复 resize",
+      "stop_condition": "没有截图"
+    },
+    {
+      "capability": "scenario-generation",
+      "trigger": "inventory incomplete",
+      "fallback": "fixed scenario set",
+      "user_input": "补充 inventory",
+      "limitations": "场景覆盖减少",
+      "evidence_label": "部分验证",
+      "recovery": "补齐 inventory",
+      "stop_condition": "无法识别对象"
+    },
+    {
+      "capability": "baseline-regression",
+      "trigger": "no baseline",
+      "fallback": "create first baseline",
+      "user_input": "无",
+      "limitations": "没有新增/修复对比",
+      "evidence_label": "未验证",
+      "recovery": "下次运行比较",
+      "stop_condition": "基线目录不可写"
+    },
+    {
+      "capability": "report-export",
+      "trigger": "export unavailable",
+      "fallback": "JSON/HTML",
+      "user_input": "无",
+      "limitations": "CSV 可能缺失",
+      "evidence_label": "部分验证",
+      "recovery": "恢复导出能力",
+      "stop_condition": "无法输出结果"
+    }
+  ]
+}

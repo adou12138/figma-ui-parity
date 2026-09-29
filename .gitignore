@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.parity-runtime/
+
+# 工作目录内会落地登录态与截图，禁止提交
+parity-test/
+.auth/
+auth.storage.json
+auth.cookies.json
+auth_info.json
+*.storage.json
+*.cookies.json
+.vp_profile*/
