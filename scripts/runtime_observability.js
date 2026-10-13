@@ -170,19 +170,28 @@
   obs.requests.forEach((r) => {
     if (!WRITE[r.method]) return;
     const sig = r.method + ' ' + r.url.split('?')[0] + ' ' + String(r.body || '').slice(0, 300);
-    (groups[sig] = groups[sig] || []).push(r.at || 0);
+    (groups[sig] = groups[sig] || []).push(r);
   });
   Object.keys(groups).forEach((sig) => {
-    const times = groups[sig].filter((t) => t).sort((a, b) => a - b);
-    if (times.length < 2) return;
-    const span = times[times.length - 1] - times[0];
+    const reqs = groups[sig].filter((r) => r && r.at).sort((a, b) => a.at - b.at);
+    if (reqs.length < 2) return;
+    const span = reqs[reqs.length - 1].at - reqs[0].at;
     if (span > 3000) return; // 3 秒内重复才是"疑似重复提交"，隔太久是正常重试
     if (findings.filter((f) => f.dimension === '7.37').length >= 10) return;
-    push('7.37', '同一写请求在 ' + span + 'ms 内重复发出 ' + times.length + ' 次，疑似重复提交/无防抖',
+    // 自动确认（保守，v4.13.0）：仅当**每一个**重复请求都返回成功（ok）才 confirmed——
+    // 全部成功=客户端确实重复发了、服务端也照单全收（无客户端防抖、服务端未拦），是可确认的
+    // 重复提交缺陷；只要有失败，说明服务端拦掉了重复（有防护），不能确认，留 pending 交人工。
+    // 响应成功与否是硬证据，不靠猜。（注：若服务端有幂等去重，严重度或可降，但客户端重复发送本身已成立。）
+    const allOk = reqs.every((r) => r.ok);
+    const okCount = reqs.filter((r) => r.ok).length;
+    push('7.37', '同一写请求在 ' + span + 'ms 内重复发出 ' + reqs.length + ' 次'
+        + (allOk ? '（全部成功，未被拦截）' : '（' + okCount + '/' + reqs.length + ' 成功）')
+        + '，' + (allOk ? '确认重复提交/无防抖' : '疑似重复提交/无防抖'),
       '写操作应防重复提交（按钮置灰 / 幂等键 / 前端去抖）',
-      '相同方法+路径+载荷重复 ' + times.length + ' 次', null,
-      { severityHint: 'P1', confidence: 0.6, status: 'pending', property: 'duplicate-submit', evidenceType: 'request-hook',
-        raw: { signature: sig.slice(0, 200), count: times.length, spanMs: span } });
+      '相同方法+路径+载荷重复 ' + reqs.length + ' 次，' + okCount + ' 次成功', null,
+      { severityHint: 'P1', confidence: allOk ? 0.85 : 0.6, status: allOk ? 'confirmed' : 'pending',
+        property: 'duplicate-submit', evidenceType: 'request-hook',
+        raw: { signature: sig.slice(0, 200), count: reqs.length, spanMs: span, okCount: okCount, allOk: allOk } });
   });
 
   // --- 7.38 遮挡（可交互元素被盖住，用户点不到）---
@@ -208,10 +217,13 @@
       const tcs = getComputedStyle(top);
       if (tcs.pointerEvents === 'none') continue; // 事件穿透，不算遮挡
       hit += 1;
+      // 保守（v4.13.0）：保持 pending，只按证据强度给置信度供排序——遮挡物**非交互**（普通浮层）
+      // 比遮挡物**也可交互**（可能是刻意叠层，如按钮上的角标）更像真 bug。不自动确认。
+      const coverInteractive = top.matches('a[href], button, input, select, textarea, [role=button], [onclick]');
       push('7.38', '可交互元素被其他元素覆盖，点击可能落不到它：' + selectorOf(el),
         '可交互元素应位于最上层（z-index / 遮挡布局）', '中心点命中 ' + selectorOf(top), el,
-        { severityHint: 'P1', confidence: 0.6, status: 'pending', property: 'occlusion', evidenceType: 'hit-test',
-          raw: { target: selectorOf(el), coveredBy: selectorOf(top) } });
+        { severityHint: 'P1', confidence: coverInteractive ? 0.5 : 0.7, status: 'pending', property: 'occlusion', evidenceType: 'hit-test',
+          raw: { target: selectorOf(el), coveredBy: selectorOf(top), coverInteractive: coverInteractive } });
     }
   }
 
