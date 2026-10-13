@@ -1,0 +1,61 @@
+{
+  "$comment": "场景执行结果回填与执行率产物的形状定义。执行率由 scripts/scenario_coverage.py 产出；status 词表与 scripts/coverage_gate.py 严格一致，未执行项原因必填。",
+  "version": "1.0",
+  "results": {
+    "description": "执行侧回填的执行结果（--results 的输入形状）",
+    "type": "object",
+    "required": ["results"],
+    "properties": {
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["scenarioId", "status"],
+          "properties": {
+            "scenarioId": {"type": "string", "description": "对应 scenarios.json 里的场景 id（S-0001 形态）"},
+            "status": {"type": "string", "enum": ["pass", "fail", "warn", "pending", "notRun", "dataMissing"]},
+            "reason": {"type": ["string", "null"], "description": "status 为 notRun/dataMissing 时必填；门禁会拦截未写原因的未执行项"},
+            "note": {"type": ["string", "null"]}
+          }
+        }
+      }
+    }
+  },
+  "coverage": {
+    "description": "--out 产出的执行率对象，形状可直接放进报告 payload 的 scenarios 段",
+    "type": "object",
+    "properties": {
+      "generatedAt": {"type": "string"},
+      "planned": {
+        "type": "object",
+        "properties": {
+          "total": {"type": "integer"},
+          "counted": {"type": "integer", "description": "参与执行率分母的��景数（计划总数 − 豁免维度）"},
+          "exemptDimensions": {"type": "array", "items": {"type": "string"}, "description": "显式豁免的维度，从分母剔除但在本段单列"},
+          "byDimension": {"type": "object"},
+          "bySafety": {"type": "object"},
+          "truncated": {"type": "integer", "description": "生成阶段因上限被截断的场景数"}
+        }
+      },
+      "executed": {
+        "type": "object",
+        "properties": {
+          "total": {"type": "integer"},
+          "rate": {"type": "number", "description": "已执行 / counted，0–1"},
+          "byDimension": {"type": "object"},
+          "bySafety": {"type": "object"}
+        }
+      },
+      "notExecuted": {
+        "type": "object",
+        "properties": {
+          "total": {"type": "integer"},
+          "byDimension": {"type": "object"},
+          "unexplained": {"type": "array", "items": {"type": "string"}, "description": "未写明原因的未执行项；--enforce 时非零退出"}
+        }
+      },
+      "unknownResults": {"type": "array", "items": {"type": "string"}, "description": "回填了计划外的场景 ID，仅告警"},
+      "note": {"type": "string"}
+    }
+  }
+}

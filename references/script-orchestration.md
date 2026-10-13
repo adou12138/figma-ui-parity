@@ -63,7 +63,11 @@ python scripts/run_parity_pipeline.py \
 | `assert_constraints.py` | `design_model.json` + 多视口测量 | `constraints.json` | LEFT/RIGHT/CENTER/SCALE/FIXED 断言数学，位置 ±2px、比例 ±2% |
 | `extra_checks.js` | 页面（`browser_evaluate`） | `findings.json` | 7.24–7.31 无副作用探测：图片比例、暗色、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留 |
 | `runtime_observability.js` | 页面（`browser_evaluate`，**两阶段**） | `findings.json`（运行期） | 7.35–7.38 运行期观测：先调用一次安装钩子、交互后再次调用采集；见 `runtime-observability.md` |
-| `discover_scenarios.py` | `design_model.json` + `page.json` + 可选 `styleDiffs.json` | `scenarios.json` | 元素级场景 + 异常数据 + 角色态；`--roles`、`--max-elements`、`--max-data-cases`、`--combo-depth`、`--breakpoints` |
+| `discover_scenarios.py` | `design_model.json` + `page.json` + 可选 `styleDiffs.json` | `scenarios.json` | 元素级场景 + 异常数据 + 角色态；`--roles`、`--max-elements`、`--max-data-cases`、`--combo-depth`、`--breakpoints`、`--patterns`（缺陷模式池反哺，见 `bug-driven-checks.md`） |
+| `run_state_scenarios.cjs` | 页面 URL + 安全策略 | `state_scenarios.json` + 截图 | 7.25/7.26/7.32/7.33 状态场景驱动（emulateMedia 切暗色/打印、route 拦载 fulfill 500、hash 导航+返回）；`--only` 挑维度、`staticOnly` 短路不启动浏览器；见 `bug-driven-checks.md` |
+| `run_journeys.cjs` | 页面 URL + 安全策略 | `journeys.json` + `journey_findings.json` | 7.39 多页用户旅程：BFS 有界点击站内链接；`--max-hops`/`--max-links-per-page`/`--max-visits`；同缺陷多路径到达按维度+属性+页面去重记 occurrences；见 `journeys.md` |
+| `state_probes.js` | 页面（切换状态后 `browser_evaluate`） | `findings`（暗色/打印/接口异常后界面） | 状态切换后的页内探测；判定与采集分离（纯函数 node 可测）；全文无反斜杠 |
+| `scenario_coverage.py` | `scenarios.json`（计划） + 可选执行结果 JSON / `report.json` | 场景执行率 JSON（可直接放进报告 payload 的 `scenarios` 段） | **计划 vs 实际**：`--results`/`--from-report` 回填执行痕迹，`--enforce` 拦截"未执行且未写原因"与低于 `--min-rate`，`--exempt-dimensions` 显式豁免并单列；见 `scenario-contract.md` |
 | `pattern_pool.py` | 缺陷产物 JSON（`diffs`/`styleDiffs`/`defects`/`findings`/`violations`） | 池更新（`--merge`）/ 风险排序 Top（`--rank`） | 缺陷模式池 `assets/defect_patterns.json`；`--merge` 幂等、`--rank --top N` 出 Top 列表；见 `bug-driven-checks.md` |
 | `normalize_evidence.py` | 各来源差异 JSON | 去重后的差异集合 | 按 `fingerprint` 合并，保留 `sources` 与 `evidence` |
 | `stabilize.js` | 页面 URL | 稳定化后的页面会话 | 截图前必须跑 |

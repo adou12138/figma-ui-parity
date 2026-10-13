@@ -278,6 +278,31 @@ def main() -> int:
              d.get("big", {}).get("changedPixels") == 400 and d.get("big", {}).get("suppressed", {}).get("edgeNoise") == 0,
              json.dumps({"c": d.get("big", {}).get("changedPixels"), "s": d.get("big", {}).get("suppressed", {})}))
 
+    # 11) scenario_coverage：真实产物串链（计划 → 回填 → 门禁），v4.18.0
+    sc_res = tmp / "sc_results.json"
+    sc_out = tmp / "sc_cov.json"
+    sc_plan = json.loads((tmp / "scenarios.json").read_text(encoding="utf-8"))
+    sc_ids = [s["id"] for s in sc_plan["scenarios"]]
+    # 只回填前两条 → 执行率必须反映"计划 vs 实际"，而不是"维度跑过就算全覆盖"
+    sc_res.write_text(json.dumps({"results": [{"scenarioId": sc_ids[0], "status": "pass"},
+                                              {"scenarioId": sc_ids[1], "status": "fail"}]},
+                                 ensure_ascii=False), encoding="utf-8")
+    r = run([py, S / "scenario_coverage.py", "--plan", tmp / "scenarios.json", "--results", sc_res,
+             "--out", sc_out, "--enforce", "--min-rate", "0.9"])
+    ck.check("scenario_coverage 执行率低于下限时 enforce 拦截", r.returncode == 1, "rc={}".format(r.returncode))
+    cov = json.loads(sc_out.read_text(encoding="utf-8")) if sc_out.exists() else {}
+    ck.check("scenario_coverage 产出计划 vs 实际（rate=2/N）",
+             cov.get("executed", {}).get("total") == 2 and 0 < cov.get("executed", {}).get("rate", 0) < 1,
+             json.dumps(cov.get("executed", {}), ensure_ascii=False))
+    ck.check("scenario_coverage 无执行记录的场景进 unexplained",
+             len(cov.get("notExecuted", {}).get("unexplained", [])) == max(0, len(sc_ids) - 2),
+             json.dumps(cov.get("notExecuted", {}).get("unexplained", [])[:3], ensure_ascii=False))
+    # 全量回填 → 应通过
+    sc_res.write_text(json.dumps({"results": [{"scenarioId": i, "status": "pass"} for i in sc_ids]},
+                                 ensure_ascii=False), encoding="utf-8")
+    r = run([py, S / "scenario_coverage.py", "--plan", tmp / "scenarios.json", "--results", sc_res, "--enforce"])
+    ck.check("scenario_coverage 全量回填后 enforce 通过", r.returncode == 0, r.stderr[-200:])
+
     return ck.summary()
 
 

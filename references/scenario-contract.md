@@ -105,3 +105,34 @@ Figma 节点 dump ──extract_design_fields.py──▶ design_model.json ─�
 | 无 `--design` | 无法做设计↔页面比对与双向盘点 | 相关维度填 `notRun` 并写明原因 |
 | 无 `--pairs` | 双向盘点（7.23）退化 | 7.23 填 `notRun:未做元素配对` |
 | 无 `--roles` | 角色态（7.34）不生成 | 7.34 填 `notRun:未提供角色` |
+
+## 五、执行结果回填与执行率门禁
+
+**为什么需要这一节**：`coverage_gate.py` 统计的是「维度是否 executed」——某维度被跑过一次，
+该维度就算覆盖。但计划里最多有 300 条**场景**，生成的一大半场景没跑时报告完全看不出来，
+覆盖数字因此虚高。**逐条场景是否真的跑了，只能看 `scenario_coverage.py` 的产出。**
+
+### 回填两种方式（可同时用，显式优先）
+
+```bash
+# ① 显式结果文件：agent/驱动把每条场景的执行结论写下来
+#    {"results": [{"scenarioId": "S-0007", "status": "pass"},
+#                 {"scenarioId": "S-0012", "status": "notRun", "reason": "安全策略下 caution 场景不执行"}]}
+python scripts/scenario_coverage.py --plan scenarios.json --results scenario_results.json --out scenario_coverage.json
+
+# ② 从报告自动回收：缺陷项里带 scenario / scenarioId 字段的 ⇒ 该场景确实跑过
+python scripts/scenario_coverage.py --plan scenarios.json --from-report report.json --out scenario_coverage.json
+
+# 门禁：未执行且没写原因 → 失败；执行率低于下限 → 失败；豁免维度从分母剔除但单列
+python scripts/scenario_coverage.py --plan scenarios.json --results scenario_results.json \
+  --enforce --min-rate 0.6 --exempt-dimensions 7.25,7.33
+```
+
+### 纪律
+
+- `status` 词表与 `coverage_gate.py` 严格一致：`pass/fail/warn/pending` = 已执行；`notRun/dataMissing` = 未执行，**原因必填**（`--enforce` 会拦截）；
+- **豁免必须显式**：`--exempt-dimensions` 列出的维度不进分母也不进分子，但在产出的 `planned.exemptDimensions` 里单列可见——不许静默；
+- 计划外的场景 ID（旧计划残留）只告警不阻塞门禁；
+- `scenario_coverage.py --out` 的产物形状可直接放进 `report.json` 的 `scenarios` 段，
+  由 `generate_reports.py` 渲染成报告的「场景覆盖」区块（键值表）；
+- 形状定义见 `schemas/scenario-coverage.schema.json`。

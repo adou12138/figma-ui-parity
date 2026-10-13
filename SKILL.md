@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.17.0
+version: 4.18.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -166,6 +166,8 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 引入 state×viewport×异常数据的组合场景，并把元素级场景按风险排序后取用（危险/写操作优先）。加 `--patterns assets/defect_patterns.json` 可接入缺陷模式池闭环：历史高频翻车的维度即使被页面内容门槛挡住也会补出页面级场景（`source=pattern-deep`）、表单校验类高发时加深异常数据，产物 `patternFeedback` 写明加权依据；该模式只影响覆盖与深度，不自动生成断言，且不传 `--patterns` 时输出与接入前完全一致。元素级与数据级场景有数量上限，被截断时必须在报告写明。
 
+**场景执行率（计划 vs 实际）**：覆盖率门禁统计的是「维度是否跑过」，**逐条场景有没有跑只能看 `scripts/scenario_coverage.py`**——把 `scenarios.json`（计划）与执行结果（显式 `--results` 文件，或从缺陷项的 `scenario` 字段 `--from-report` 自动回收）合成执行率，未执行项必须显式写明原因，`--enforce` 拦截"未写原因的未执行"与低于 `--min-rate` 的执行率，`--exempt-dimensions` 显式豁免并单列。产出形状见 `schemas/scenario-coverage.schema.json`，用法见 `references/scenario-contract.md` 第五节。
+
 ### 6. 六层检查
 
 1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 必须一致，尺寸不等时不缩放硬比。回归 diff 噪声偏高时可加 `--enhanced`（`run_parity_pipeline.py --enhanced-diff`）：抑制抗锯齿与孤立噪点，抑制量写进 `suppressed` 留痕、遮罩画淡黄；**该模式口径与基础模式不同，跨模式比基线前先确认基线同模式**。
@@ -236,7 +238,7 @@ python scripts/generate_reports.py --input ./parity-test/report.json --outdir ./
 
 输出三件套：
 
-- `report.html`：检查维度完成度、执行摘要、对象匹配与坐标基准、场景覆盖、并排截图、差异热力图、样式分组差异、图标与图片差异、关键差异汇总、缺陷清单、待确认、回归对比、降级能力、diffScore 趋势、阈值与忽略项声明。
+- `report.html`：检查维度完成度、执行摘要、对象匹配与坐标基准、场景覆盖（**计划 vs 实际**：`scenario_coverage.py` 产出的执行率、未执行分布与豁免维度）、并排截图、差异热力图、样式分组差异、图标与图片差异、关键差异汇总、缺陷清单、待确认、回归对比、降级能力、diffScore 趋势、阈值与忽略项声明。
 - `report.json`：机器可读完整结果，含 `meta.coverage` 与 `meta.defectValidation`。
 - `defects.csv`：UTF-8-SIG、逗号分隔、严格 8 列（序号、等级、缺陷类型、功能模块、问题描述、解决方案、元素定位、备注(附图)）。问题描述为「现象 + 指标」同列双段。
 
