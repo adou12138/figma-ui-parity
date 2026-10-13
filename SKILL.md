@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.13.0
+version: 4.14.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -157,6 +157,8 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 - 元素级与数据级场景有数量上限，被截断时必须在报告里写明，不得静默丢弃。
 
 维度 7.24–7.34 的静态探测用 `scripts/extra_checks.js`：图片比例与加载失败、暗色模式、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留。该脚本只做无副作用探测，不点击不提交。
+
+状态类场景（暗色模式 7.25、打印视图 7.26、状态残留 7.32、接口异常 7.33）由 `scripts/node/run_state_scenarios.cjs` 驱动执行：先用 `page.emulateMedia` 切换渲染模式或 `page.route` 拦载 XHR/fetch fulfill 500（请求不到服务端、零真实写），再用 `scripts/state_probes.js` 在切换后的状态里重新探测。产物为每个维度给出 `pass/fail/pending/notRun` 状态与 findings；`staticOnly` 策略下不做页面交互，相应维度填 `notRun` 并写明原因。判定口径（哪些记 confirmed、哪些记 pending）见 `references/bug-driven-checks.md` 对应维度节。
 
 维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
 

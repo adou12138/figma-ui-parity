@@ -170,6 +170,11 @@ def main() -> int:
         # P2-16：第二个输入框的用例起点应轮转（单输入框场景验证存在异常数据即可）
         data_cases = [s for s in sc["scenarios"] if s.get("source") == "anomaly-data"]
         ck.check("异常数据场景已生成", len(data_cases) > 0)
+        # v4.14.0：状态类场景必须带 runner（指向状态场景驱动），未接驱动的场景必须为 null
+        runner_dims = {"7.25", "7.26", "7.32", "7.33"}
+        bad_runner = [s["id"] for s in sc["scenarios"]
+                      if (s.get("runner") == "node/run_state_scenarios.cjs") != (s["dimension"] in runner_dims)]
+        ck.check("状态场景 runner 字段与维度一一对应", not bad_runner, str(bad_runner[:5]))
     else:
         ck.check("discover_scenarios 产出场景且含截断字段", False, r.stderr[-300:])
 

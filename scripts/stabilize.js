@@ -122,7 +122,7 @@ if (require.main === module) {
   (async () => {
     const url = process.argv.includes('--url') ? process.argv[process.argv.indexOf('--url') + 1] : null;
     if (!url) { console.error('ERROR: --url required'); process.exit(1); }
-    const pw = resolvePlaywright();
+    const pw = await resolvePlaywright();   // resolvePlaywright 是 async，必须 await
     if (!pw) { console.error('ERROR: playwright-core not found'); process.exit(1); }
     const chrome = resolveChrome();
     const headed = process.argv.includes('--headed');

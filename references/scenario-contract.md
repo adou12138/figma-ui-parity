@@ -74,7 +74,8 @@ Figma 节点 dump ──extract_design_fields.py──▶ design_model.json ─�
       "safety": "caution",
       "source": "element-inventory",
       "viewport": null,
-      "page": "https://目标页"
+      "page": "https://目标页",
+      "runner": null
     }
   ]
 }
@@ -85,6 +86,7 @@ Figma 节点 dump ──extract_design_fields.py──▶ design_model.json ─�
 - `dimension` 必须取自 `schemas/check-dimensions.json`，用于覆盖率统计。
 - `level=element` 的场景必须带 `element.selector`（设计侧独有元素可为空并用 `anchor` 说明）。
 - `action.type` 取值：`none` / `click` / `hover` / `focus` / `input` / `keyboard` / `resize` / `navigate` / `route-back` / `refresh` / `network` / `theme` / `media` / `upload` / `role`。
+- `runner`（可空）：该场景的**推荐执行驱动**（相对 `scripts/` 的路径，如 `node/run_state_scenarios.cjs`）。标注了 runner 的场景有对应的可执行脚本，不再依赖 agent 临场发挥；为 `null` 表示按通用步骤人工/agent 执行。状态类场景（theme / media / network / route-back）均由 `node/run_state_scenarios.cjs` 执行，其安全边界见该文件头注释与 `bug-driven-checks.md` 对应维度节。
 - `safety` 必须按风险分级：`danger` 场景默认只允许静态检查；仅当本次 `run-manifest.json` 明确为 `safetyPolicy=all` 且 `testEnvironmentConfirmed=true` 时，才允许真实点击或执行，具体遵循 `button-audit.md`。
 - 元素级场景上限由 `--max-elements` 控制，异常数据场景上限由 `--max-data-cases` 控制；被截断时必须在报告里写明，不得静默丢场景。
 

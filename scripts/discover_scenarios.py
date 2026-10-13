@@ -82,7 +82,7 @@ class Builder:
         self.dropped: dict = {}
 
     def add(self, name, dimension, *, level="page", element=None, action=None, expected="", assertions=None,
-            data=None, safety="safe", source="baseline", precondition=None, viewport=None) -> None:
+            data=None, safety="safe", source="baseline", precondition=None, viewport=None, runner=None) -> None:
         if len(self.items) >= self.max_scenarios:
             # 截断必须留痕：被丢弃的场景按维度计数并随结果输出，
             # 由报告写明，不允许静默丢弃。
@@ -104,6 +104,7 @@ class Builder:
             "source": source,
             "viewport": viewport,
             "page": self.page_url,
+            "runner": runner,
         })
         self.dimensions.add(dimension)
 
@@ -172,15 +173,20 @@ def build(args) -> dict:
     b.add("密集数据", "7.21", expected="多条目下列表密度、行高与设计一致", safety="caution", source="baseline")
     b.add("暗色模式", "7.25", action={"type": "theme", "value": "dark"},
           expected="深色下文字仍可读、无硬编码浅色背景",
-          assertions=["无文字与背景对比度低于 4.5 的元素", "无仅主题变色的硬编码 #fff 背景"], source="dimension")
-    b.add("打印视图", "7.26", action={"type": "media", "value": "print"}, expected="打印时不丢失内容、操作按钮不误入", source="dimension")
+          assertions=["无文字与背景对比度低于 4.5 的元素", "无仅主题变色的硬编码 #fff 背景"],
+          runner="node/run_state_scenarios.cjs", source="dimension")
+    b.add("打印视图", "7.26", action={"type": "media", "value": "print"},
+          expected="打印时不丢失内容、操作按钮不误入",
+          runner="node/run_state_scenarios.cjs", source="dimension")
     b.add("慢网络与接口异常", "7.33", action={"type": "network", "value": "500"},
           expected="接口失败时给出错误提示而非白屏或骨架残留",
-          assertions=["出现错误提示或重试入口", "骨架屏未永久残留"], safety="caution", source="dimension")
+          assertions=["出现错误提示或重试入口", "骨架屏未永久残留"], safety="caution",
+          runner="node/run_state_scenarios.cjs", source="dimension")
     if kinds & {"tabs", "table", "pagination"}:
         b.add("路由切换后状态", "7.32", action={"type": "route-back"},
               expected="返回后筛选/滚动/展开态不残留或按设计重置",
-              assertions=["返回后列表状态与首次进入一致"], source="dimension")
+              assertions=["返回后列表状态与首次进入一致"],
+              runner="node/run_state_scenarios.cjs", source="dimension")
     if scrollables:
         b.add("滚动容器与固定元素", "7.31", expected="固定底栏不遮挡内容、sticky 头部不互相重叠",
               assertions=["最后一行内容可完整滚动到可视区", "sticky/fixed 元素不遮挡可点击区域"], source="page-inventory")
