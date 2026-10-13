@@ -141,6 +141,46 @@ function applyIgnore(img, regions) {
   return n;
 }
 
+// ---------------- 增强模式：抗锯齿与孤立噪点抑制（v4.16.0） ----------------
+/**
+ * 默认**关闭**（不传 --enhanced 时行为与引入前逐像素一致，保历史基线可比）。
+ * 开启后只做两件"只降噪、不压真缺陷"的事，并把抑制量写进结果：
+ *
+ * 1. 边缘自适应阈值：抗锯齿/几何偏移只发生在**梯度大的边缘像素**上，两侧都是边缘时
+ *    把阈值放大 edgeFactor 倍。平坦区域（整块背景、按钮底色、文字块）阈值不变——
+ *    "整块变色"这类真缺陷都发生在平坦区，不会被这个机制压掉。
+ * 2. 孤立差异像素过滤：8 邻域内没有任何其它差异像素的单点差异按噪点抑制；成片差异
+ *    （≥2 连通）全部保留——真实缺陷一定是成片的。
+ *
+ * 两项抑制量都写进 suppressed.{edgeNoise,isolated}，报告可见，不静默吞掉。
+ */
+function isEdgePixel(img, x, y, edgeGradient) {
+  const lum = (xx, yy) => {
+    if (xx < 0 || yy < 0 || xx >= img.width || yy >= img.height) return null;
+    const di = (yy * img.width + xx) * 4;
+    return 0.299 * img.data[di] + 0.587 * img.data[di + 1] + 0.114 * img.data[di + 2];
+  };
+  const c = lum(x, y);
+  if (c == null) return false;
+  let lo = c, hi = c;
+  for (const v of [lum(x - 1, y), lum(x + 1, y), lum(x, y - 1), lum(x, y + 1)]) {
+    if (v == null) continue;
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
+  return (hi - lo) >= edgeGradient;
+}
+
+function maxChannelDelta(A, B, i) {
+  const di = i * 4;
+  return Math.max(
+    Math.abs(A.data[di] - B.data[di]),
+    Math.abs(A.data[di + 1] - B.data[di + 1]),
+    Math.abs(A.data[di + 2] - B.data[di + 2]),
+    Math.abs(A.data[di + 3] - B.data[di + 3]),
+  );
+}
+
 // ---------------- 核心 diff ----------------
 function diff(aIn, bIn, opts) {
   opts = opts || {};
@@ -158,28 +198,66 @@ function diff(aIn, bIn, opts) {
   }
   const ignoredCount = applyIgnore(A, regions) + applyIgnore(B, regions);
   const th = opts.threshold == null ? 16 : opts.threshold;
+  const enhanced = !!opts.enhanced;
+  const edgeFactor = opts.edgeFactor == null ? 2.5 : opts.edgeFactor;
+  const edgeGradient = opts.edgeGradient == null ? 12 : opts.edgeGradient;
+  const weakRatio = opts.weakRatio == null ? 0.5 : opts.weakRatio;
   const total = A.width * A.height;
   let changed = 0;
+  let weak = 0;
+  let edgeNoise = 0;
+  const flags = enhanced ? new Uint8Array(total) : null;
   const mask = Buffer.alloc(total * 4);
   for (let i = 0; i < total; i++) {
     const di = i * 4;
-    const d = Math.max(
-      Math.abs(A.data[di] - B.data[di]),
-      Math.abs(A.data[di + 1] - B.data[di + 1]),
-      Math.abs(A.data[di + 2] - B.data[di + 2]),
-      Math.abs(A.data[di + 3] - B.data[di + 3]),
-    );
-    if (d > th) {
+    const d = maxChannelDelta(A, B, i);
+    if (d <= th * weakRatio) continue;                 // 明显在噪点内，不计
+    let hit = d > th;
+    if (hit && enhanced) {
+      const x = i % A.width, y = (i - x) / A.width;
+      if (isEdgePixel(A, x, y, edgeGradient) && isEdgePixel(B, x, y, edgeGradient)
+          && d <= th * edgeFactor) {
+        edgeNoise++;                                   // 边缘噪点：按抗锯齿抑制
+        hit = false;
+      }
+    }
+    if (hit) {
       changed++;
+      if (enhanced) flags[i] = 1;
       mask[di] = 239; mask[di + 1] = 68; mask[di + 2] = 68; mask[di + 3] = 180; // 红，半透明
     } else {
+      weak++;                                          // 超过噪点门槛但未过判定线：弱差异
       mask[di + 3] = 0;
     }
   }
-  const score = +(changed / total * 100).toFixed(2);
+  // 孤立差异像素过滤（仅增强模式）：8 邻域无其它差异像素 → 按噪点抑制
+  let isolated = 0;
+  if (enhanced) {
+    for (let i = 0; i < total; i++) {
+      if (flags[i] !== 1) continue;
+      const x = i % A.width, y = (i - x) / A.width;
+      let neighbour = false;
+      for (let dy = -1; dy <= 1 && !neighbour; dy++) {
+        for (let dx = -1; dx <= 1 && !neighbour; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= A.width || yy >= A.height) continue;
+          if (flags[yy * A.width + xx] === 1) neighbour = true;
+        }
+      }
+      if (!neighbour) {
+        flags[i] = 0;
+        changed--;
+        isolated++;
+        const di = i * 4;
+        mask[di] = 250; mask[di + 1] = 204; mask[di + 2] = 21; mask[di + 3] = 90; // 淡黄：被抑制的孤立噪点
+      }
+    }
+  }
+  const score = +(Math.max(0, changed) / total * 100).toFixed(2);
   let maskImage = null;
   if (opts.out) { fs.writeFileSync(opts.out, writePNG(mask, A.width, A.height)); maskImage = opts.out; }
-  return {
+  const out = {
     ok: true,
     width: A.width, height: A.height,
     threshold: th,
@@ -191,6 +269,15 @@ function diff(aIn, bIn, opts) {
     maskImage,
     ignoredRegions: ignoredCount,
   };
+  if (enhanced) {
+    out.mode = 'enhanced';
+    out.weakPixels = weak;
+    out.suppressed = { edgeNoise, isolated };
+    out.note = '增强模式：边缘自适应阈值与孤立噪点已抑制（遮罩里淡黄=被抑制的噪点），'
+      + '抑制量见 suppressed，弱差异见 weakPixels（不计入 changedPixels）。'
+      + '增强模式与基础模式的 diffScore 口径不同，跨模式比较前先确认基线来自同一模式。';
+  }
+  return out;
 }
 
 // ---------------- CLI ----------------
@@ -204,13 +291,17 @@ if (require.main === module) {
   const out = cliArg('out');
   const threshold = cliArg('threshold');
   const ignore = cliArg('ignore');
+  const enhanced = process.argv.includes('--enhanced');
+  const edgeFactor = cliArg('edge-factor');
   const r = diff(a, b, {
     out,
     threshold: threshold == null ? undefined : parseInt(threshold, 10),
     ignore,
+    enhanced,
+    edgeFactor: edgeFactor == null ? undefined : parseFloat(edgeFactor),
   });
   console.log(JSON.stringify(r, null, 2));
   process.exit(r.ok ? 0 : 2);
 }
 
-module.exports = { readPNG, writePNG, diff, applyIgnore };
+module.exports = { readPNG, writePNG, diff, applyIgnore, isEdgePixel, maxChannelDelta };

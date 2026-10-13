@@ -14,7 +14,7 @@
 Exit 0 = all checks passed; exit 1 = at least one check failed.
 """
 from __future__ import annotations
-import csv, json, subprocess, sys, tempfile
+import csv, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -63,6 +63,22 @@ PAGE = {
 
 def run(cmd):
     return subprocess.run([str(c) for c in cmd], capture_output=True, text=True)
+
+
+def _find_node() -> str:
+    """定位 node 可执行文件：PATH 优先，其次常见安装位置。
+
+    Git Bash 下 `node` 可能不在 Python 子进程的 PATH 里（只有 nodejs 目录下的
+    node.exe），只靠 shutil.which 会 FileNotFoundError。
+    """
+    found = shutil.which("node") or shutil.which("node.exe")
+    if found:
+        return found
+    for c in (os.environ.get("NODE"), r"C:\Program Files\nodejs\node.exe",
+              "/usr/local/bin/node", "/usr/bin/node"):
+        if c and Path(c).exists():
+            return c
+    return "node"
 
 
 class Checker:
@@ -232,6 +248,35 @@ def main() -> int:
     # 9) coverage_gate：缺维度时 enforce 拦截
     r = run([py, S / "coverage_gate.py", "--report", tmp / "report.json", "--enforce"])
     ck.check("coverage_gate 低覆盖被 enforce 拦截", r.returncode == 1, "rc={}".format(r.returncode))
+
+    # 10) diff_score 增强模式：默认口径不变 + 边缘/孤立抑制 + 平坦区真缺陷不被压掉（v4.16.0）
+    node_exe = _find_node()
+    probe_js = tmp / "diff_probe.cjs"
+    probe_js.write_text(
+        "const {writePNG, diff} = require(process.argv[2]);\n"
+        "function img(w,h,f){const b=Buffer.alloc(w*h*4);for(let y=0;y<h;y++)for(let x=0;x<w;x++)"
+        "{const c=typeof f==='function'?f(x,y):f;const i=(y*w+x)*4;b[i]=c[0];b[i+1]=c[1];b[i+2]=c[2];b[i+3]=c[3];}"
+        "return writePNG(b,w,h);}\n"
+        "const flat=img(20,20,[255,255,255,255]);\n"
+        "const dot=img(20,20,(x,y)=>(x===10&&y===10)?[0,0,0,255]:[255,255,255,255]);\n"
+        "const block=img(20,20,(x,y)=>(x>=8&&x<11&&y>=8&&y<11)?[0,0,0,255]:[255,255,255,255]);\n"
+        "const big=img(40,40,(x,y)=>(x>=10&&x<30&&y>=10&&y<30)?[200,200,200,255]:[255,255,255,255]);\n"
+        "const flatImg=img(40,40,[255,255,255,255]);\n"
+        "console.log(JSON.stringify({plain_dot:diff(flat,dot,{}).changedPixels,"
+        "dot:diff(flat,dot,{enhanced:true}),block:diff(flat,block,{enhanced:true}),"
+        "big:diff(flatImg,big,{enhanced:true})}));\n",
+        encoding="utf-8")
+    r = run([node_exe, str(probe_js), str(S / "diff_score.js")])
+    ok = r.returncode == 0
+    d = json.loads(r.stdout) if ok else {}
+    ck.check("diff_score 基础模式口径不变（孤立像素仍计入）", ok and d.get("plain_dot") == 1, r.stderr[-200:])
+    ck.check("diff_score 增强模式抑制孤立噪点并留痕",
+             d.get("dot", {}).get("changedPixels") == 0 and d.get("dot", {}).get("suppressed", {}).get("isolated") == 1,
+             json.dumps(d.get("dot", {}).get("suppressed", {})))
+    ck.check("diff_score 成片差异保留", d.get("block", {}).get("changedPixels") == 9, json.dumps(d.get("block", {}).get("suppressed", {})))
+    ck.check("diff_score 平坦区整块变色不被压掉（真缺陷不漏）",
+             d.get("big", {}).get("changedPixels") == 400 and d.get("big", {}).get("suppressed", {}).get("edgeNoise") == 0,
+             json.dumps({"c": d.get("big", {}).get("changedPixels"), "s": d.get("big", {}).get("suppressed", {})}))
 
     return ck.summary()
 

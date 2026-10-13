@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.15.0
+version: 4.16.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -168,7 +168,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 ### 6. 六层检查
 
-1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 必须一致，尺寸不等时不缩放硬比。
+1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 必须一致，尺寸不等时不缩放硬比。回归 diff 噪声偏高时可加 `--enhanced`（`run_parity_pipeline.py --enhanced-diff`）：抑制抗锯齿与孤立噪点，抑制量写进 `suppressed` 留痕、遮罩画淡黄；**该模式口径与基础模式不同，跨模式比基线前先确认基线同模式**。
 2. **样式层**：逐字段比对结果按 `references/extraction.md` 与 `references/figma-fields.md` 复核；图标成对精确比对按 `references/icon-diff.md`。
 3. **行为层**：按 `references/button-audit.md` 做三层判定（静态可见 / 可交互 / 结果生效）；弹层打开后必须补充盘点。落地脚本 `scripts/button_audit.js`、`scripts/node/run_button_audit.cjs`、`scripts/gen_button_report.cjs`。
 4. **健壮性层**：响应式按 `references/responsive.md` 与 `assert_constraints.py`；溢出、遮挡、层级、键盘、焦点、ARIA 按 `references/aria-diff.md` 与 `references/bug-driven-checks.md`；长文本与异常数据按该文件的断言细则执行。

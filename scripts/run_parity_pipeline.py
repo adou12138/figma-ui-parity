@@ -51,6 +51,8 @@ def main() -> int:
     ap.add_argument("--page-json", default=None, type=Path, help="collect_page_inventory.js 产物")
     ap.add_argument("--figma-png", default=None, type=Path)
     ap.add_argument("--page-png", default=None, type=Path)
+    ap.add_argument("--enhanced-diff", action="store_true",
+                    help="diff_score 用增强模式（抗锯齿/孤立噪点抑制）；口径与基础模式不同，跨模式比基线前先确认同模式")
     ap.add_argument("--report", default=None, type=Path, help="上游 report.json")
     ap.add_argument("--outdir", default=None, type=Path)
     ap.add_argument("--dry-run", action="store_true")
@@ -65,8 +67,11 @@ def main() -> int:
         stage("stabilize", [node, str(HERE / "stabilize.js"), "--url", args.page_url], args.dry_run, log)
 
     if args.figma_png and args.page_png:
+        # --enhanced-diff 是 opt-in：开启后 diff_score 用抗锯齿/孤立噪点抑制，
+        # diffScore 口径与基础模式不同，跨模式比基线前要先确认基线同模式。
         stage("diff_score", [node, str(HERE / "diff_score.js"), "--a", str(args.figma_png), "--b", str(args.page_png),
-                             "--out", str(outdir / "mask.png")], args.dry_run, log)
+                             "--out", str(outdir / "mask.png")] + (["--enhanced"] if args.enhanced_diff else []),
+              args.dry_run, log)
     else:
         log["diff_score"] = {"status": "notRun", "reason": "缺少 --figma-png 或 --page-png"}
 

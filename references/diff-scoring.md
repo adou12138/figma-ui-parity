@@ -27,6 +27,35 @@ node scripts/diff_score.js \
 - `threshold`（默认 16/255）：单像素四通道最大差超过即判定为"变化"。**这是像素噪声门槛，不是百分比**——调它是为了滤掉抗锯齿与压缩噪声，不是调"允许多少差异"。百分比口径见 [visual-parity.md](visual-parity.md) 的「两套阈值不是一回事」。
 - `diffScore` = 变化像素数 / 总像素数 × 100，四舍五入到 2 位小数。0 = 完全一致，100 = 全变。
 
+## 增强模式（抗锯齿与孤立噪点抑制）
+
+`--enhanced` **默认关闭**：不传该参数时逐像素口径与引入前完全一致，历史基线与旧报告继续可比。
+
+```bash
+# 同一页两次截图的回归 diff，开启降噪
+node scripts/diff_score.js --a last.png --b this.png --out mask.png --threshold 16 --enhanced
+# 串进流水线：run_parity_pipeline.py --enhanced-diff
+```
+
+开启后只做两件"只降噪、不压真缺陷"的事：
+
+| 机制 | 判据 | 为什么不会漏真缺陷 |
+|---|---|---|
+| **边缘自适应阈值** | 两侧都是梯度 ≥12 的边缘像素时，阈值放大 2.5 倍（`--edge-factor` 可调） | 抗锯齿/几何偏移只发生在边缘；"整块变色"发生在平坦区，阈值不变，边界像素差值远超放大后的阈值也不会被压 |
+| **孤立差异像素过滤** | 8 邻域内没有任何其它差异像素的单点差异按噪点抑制 | 真实缺陷一定是**成片**的（≥2 连通），单点差异才是噪点 |
+
+两种抑制量都写进结果并**在遮罩里可见**，不静默吞掉：
+
+```json
+{ "mode": "enhanced", "diffScore": 0.31, "changedPixels": 1480,
+  "weakPixels": 260,
+  "suppressed": { "edgeNoise": 5120, "isolated": 37 } }
+```
+
+- `suppressed.edgeNoise` / `suppressed.isolated`：被抑制的噪点像素数（遮罩里画成**淡黄**，方便一眼看出"这里被降噪了"）；
+- `weakPixels`：差值超过噪点门槛（`threshold × 0.5`）但未过判定线的像素，单列统计**不计入** `changedPixels`——用于区分"差一点点"与"差很多"；
+- ⚠️ **跨模式比较前先确认基线同模式**：基础模式与增强模式的 `diffScore` 口径不同，混用会得出错误的回归结论。历史基线是在基础模式下建立的，开增强前建议重建基线。
+
 ## 集成到报告
 
 1. **pixelDiff 增加 `diffScore` 字段**：步骤 5 拿到 visual-parity 整页 diff 后，用 `diff_score.js` 复算一次（或以其为准），写入 `report.json` 的 `pixelDiff.diffScore`，HTML 报告顶部概览显示。
