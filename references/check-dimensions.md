@@ -44,10 +44,14 @@
 | 7.32 | 页面级状态残留（SPA 路由 / 多标签页 / 返回刷新） | `bug-driven-checks.md` | `discover_scenarios.py` |
 | 7.33 | 接口异常与慢网络下的界面 | `bug-driven-checks.md` | 部分 |
 | 7.34 | 角色与权限态视图差异 | `bug-driven-checks.md` | 无 |
+| 7.35 | 运行期 JS 异常（console.error / onerror / unhandledrejection） | `runtime-observability.md` | `runtime_observability.js` |
+| 7.36 | 交互期网络失败（fetch/XHR 非 2xx） | `runtime-observability.md` | `runtime_observability.js` |
+| 7.37 | 重复请求 / 重复提交 | `runtime-observability.md` | `runtime_observability.js` |
+| 7.38 | 可交互元素遮挡（点击落不到） | `runtime-observability.md` | `runtime_observability.js` |
 
 ## 三、使用规则
 
 1. 报告必须逐项输出本表全部维度的结论，状态只能是 `pass` / `fail` / `warn` / `pending` / `notRun` / `dataMissing`。
 2. 覆盖率 = (`pass+fail+warn+pending`) / 维度总数，由 `scripts/coverage_gate.py` 计算，禁止手填。
-3. 新增能力时给新维度分配**新编号**（当前下一个是 7.35），不得复用或改写已发布编号的含义。
+3. 新增能力时给新维度分配**新编号**（当前下一个是 7.39），不得复用或改写已发布编号的含义。
 4. 缺陷记录里的 `dimension` 字段必须填本表 ID，跨层（像素层 / 样式层 / 清单层）同维度同元素才能正确合并去重。

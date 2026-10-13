@@ -10,6 +10,7 @@ Figma 文件/节点 dump ─ enumerate_page_frames ─▶ frame_map.json ─▶ 
                  extract_containers.js 等   ▶ containers/texts/图标 ─┘        │
                                     compare_fields.py ▶ styleDiffs.json ─────┴─▶ normalize_evidence.py
                                     extra_checks.js   ▶ findings.json ─────────┘        │
+                          runtime_observability.js ▶ findings.json（运行期）─────────────┘
                                                                                         ▼
                      coverage_gate.py ◀ report.json ◀ validate_defects.py ◀────────────────┘
                                                                                         │
@@ -61,7 +62,9 @@ python scripts/run_parity_pipeline.py \
 | `compare_fields.py` | `design_model.json` + 页面提取 + 可选 mapping | `styleDiffs.json`（含 `defects`、`unmatched`） | 坐标基准归一（中位归一需 ≥3 对配对，偏移超阈值输出告警）；属性级容差表；文本/容器分开配对，文本子节点配对成功时其父容器记 `matchedIndirect` 不算 designOnly；透明背景与半透明填充不参与比对；rotation 非零的节点不比位置尺寸；缺陷直接带 `severity`/`confidence`/`reproduction`/`suggestion` |
 | `assert_constraints.py` | `design_model.json` + 多视口测量 | `constraints.json` | LEFT/RIGHT/CENTER/SCALE/FIXED 断言数学，位置 ±2px、比例 ±2% |
 | `extra_checks.js` | 页面（`browser_evaluate`） | `findings.json` | 7.24–7.31 无副作用探测：图片比例、暗色、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留 |
-| `discover_scenarios.py` | `design_model.json` + `page.json` + 可选 `styleDiffs.json` | `scenarios.json` | 元素级场景 + 异常数据 + 角色态；`--roles`、`--max-elements`、`--max-data-cases` |
+| `runtime_observability.js` | 页面（`browser_evaluate`，**两阶段**） | `findings.json`（运行期） | 7.35–7.38 运行期观测：先调用一次安装钩子、交互后再次调用采集；见 `runtime-observability.md` |
+| `discover_scenarios.py` | `design_model.json` + `page.json` + 可选 `styleDiffs.json` | `scenarios.json` | 元素级场景 + 异常数据 + 角色态；`--roles`、`--max-elements`、`--max-data-cases`、`--combo-depth`、`--breakpoints` |
+| `pattern_pool.py` | 缺陷产物 JSON（`diffs`/`styleDiffs`/`defects`/`findings`/`violations`） | 池更新（`--merge`）/ 风险排序 Top（`--rank`） | 缺陷模式池 `assets/defect_patterns.json`；`--merge` 幂等、`--rank --top N` 出 Top 列表；见 `bug-driven-checks.md` |
 | `normalize_evidence.py` | 各来源差异 JSON | 去重后的差异集合 | 按 `fingerprint` 合并，保留 `sources` 与 `evidence` |
 | `stabilize.js` | 页面 URL | 稳定化后的页面会话 | 截图前必须跑 |
 | `diff_score.js` | 两张 PNG | `diffScore` + 遮罩图 | `--threshold` 是像素噪声门槛，非百分比 |
@@ -92,7 +95,8 @@ collect_page_inventory  → 页面资产盘点
 compare_fields          → 设计↔页面逐字段比对 + 双向盘点
 assert_constraints      → constraints 多视口断言
 extra_checks            → 资源与偏好维度探测
-discover_scenarios      → 元素级场景矩阵
+runtime_observability   → 运行期观测（交互前安装钩子、交互后采集）
+discover_scenarios      → 元素级场景矩阵（--combo-depth 组合）
 stabilize               → 页面稳定化（截图前）
 extract_* / capture_aria→ 样式与可访问性提取
 diff_score              → 像素差异与遮罩
@@ -100,6 +104,7 @@ button_audit            → 按钮可用性与点击生效
 gen_button_report       → 按钮结果落盘
 journey_coverage        → 状态旅程覆盖率
 normalize_evidence      → 缺陷归一与去重
+pattern_pool            → 缺陷模式池累积 + 风险排序 Top（可选）
 validate_defects        → 缺陷结构校验（不通过不得出报告）
 coverage_gate           → 维度覆盖率与门禁
 ignore_regions          → 忽略区到期审计

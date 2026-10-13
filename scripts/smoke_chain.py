@@ -173,6 +173,27 @@ def main() -> int:
     else:
         ck.check("discover_scenarios 产出场景且含截断字段", False, r.stderr[-300:])
 
+    # 6b) 运行期观测（7.35–7.38）：findings 形状必须能被 normalize_evidence 消费
+    runtime_findings = {"url": PAGE["url"], "findings": [
+        {"dimension": "7.35", "symptom": "运行期抛异常", "expected": "无未捕获错误", "actual": "onerror: boom",
+         "severityHint": "P1", "severity": "P1", "confidence": 0.85, "status": "confirmed",
+         "element": {"selector": "#a", "nth": 0}, "evidence": [{"type": "error-hook"}], "sources": ["runtime-observability"]},
+    ]}
+    (tmp / "runtime.json").write_text(json.dumps(runtime_findings, ensure_ascii=False), encoding="utf-8")
+    r = run([py, S / "normalize_evidence.py", tmp / "runtime.json", tmp / "runtime_norm.json"])
+    ok = r.returncode == 0 and json.loads((tmp / "runtime_norm.json").read_text(encoding="utf-8")).get("total", 0) > 0
+    ck.check("运行期观测 findings 能被 normalize_evidence 消费", ok, r.stderr[-200:])
+
+    # 6c) pattern_pool：风险排序产出 Top 列表 + 并入幂等
+    r = run([py, S / "pattern_pool.py", "--rank", tmp / "payload.json", "--top", "3", "--out", tmp / "top.md"])
+    ok = r.returncode == 0 and (tmp / "top.md").exists() and "Top" in (tmp / "top.md").read_text(encoding="utf-8")
+    ck.check("pattern_pool --rank 产出 Top 列表", ok, r.stderr[-200:])
+    pool_tmp = tmp / "pool.json"
+    r1 = run([py, S / "pattern_pool.py", "--pool", pool_tmp, "--merge", tmp / "payload.json"])
+    r2 = run([py, S / "pattern_pool.py", "--pool", pool_tmp, "--merge", tmp / "payload.json"])
+    ok = r1.returncode == 0 and r2.returncode == 0 and "新增 0 条模式" in r2.stdout
+    ck.check("pattern_pool --merge 幂等（二次并入新增 0 条）", ok, r2.stdout[-200:])
+
     # 7) assert_constraints：缺 frameWidth 的视口必须跳过而不是除零崩溃
     measurements = {"base": "375", "viewports": {
         "375": {"frameWidth": 375, "frameHeight": 200, "items": {"1:2": {"x": 20, "y": 30, "w": 100, "h": 40}}},

@@ -56,6 +56,23 @@ def bbox_of(element: dict) -> dict:
     return {"x": rect.get("x", 0), "y": rect.get("y", 0), "w": rect.get("w", 0), "h": rect.get("h", 0)}
 
 
+# 风险排序：元素级场景有条数上限，按位置切片会让"排在后面的高风险元素"被砍掉。
+# 排序把危险/写操作、无名称图标按钮顶到前面，让有限预算先打高价值目标——
+# 与默认档相比只是**选择的先后**，场景总数不变（不改变截断上限）。
+_BTN_RANK = {"danger": 0, "caution": 1, "safe": 3}
+
+
+def button_risk(btn: dict) -> int:
+    text = str(btn.get("text") or btn.get("title") or "")
+    if not text.strip():
+        return 2  # 无名称图标按钮：可访问性风险，靠前
+    return _BTN_RANK.get(safety_of(text), 3)
+
+
+def input_risk(item: dict) -> int:
+    return 0 if not item.get("labelled") else 1  # 缺 label 关联的输入靠前
+
+
 class Builder:
     def __init__(self, page_url: str, max_scenarios: int):
         self.items: list = []
@@ -106,6 +123,17 @@ def build(args) -> dict:
     empties = [e for e in (page.get("emptyStateCandidates") or []) if isinstance(e, dict)]
     scrollables = page.get("scrollables") or []
 
+    # 组合深度：1=单点（默认，输出与不放宽时一致）；>=2 引入 state×viewport×异常数据组合。
+    combo = max(1, int(getattr(args, "combo_depth", 1) or 1))
+    bps = [x.strip() for x in str(getattr(args, "breakpoints", "") or "").split(",") if x.strip()]
+    # 风险排序（不改变截断上限，只改变选择先后）
+    buttons = sorted(buttons, key=button_risk)
+    inputs = sorted(inputs, key=input_risk)
+    # 自适应深度：表单密集页面在组合档下加深异常数据覆盖
+    data_cases = int(args.max_data_cases)
+    if combo >= 2 and page.get("forms") and len(inputs) >= 3:
+        data_cases = min(len(ANOMALY_DATA), data_cases + 3)
+
     b = Builder(page_url, args.max_scenarios)
 
     b.add("页面默认态", "7.1", expected="整页样式与设计一致",
@@ -129,8 +157,16 @@ def build(args) -> dict:
               assertions=["出现错误提示", "焦点或滚动定位到错误字段", "提交未成功"], safety="caution", source="page-inventory")
         b.add("表单非法值提交", "7.17", action={"type": "input", "value": "!@#$"},
               expected="非法输入被拦截或给出明确提示", safety="caution", source="page-inventory")
-    b.add("多视口态", "7.4", viewport="all", expected="各断点无横向溢出、元素不跑出视口",
-          assertions=["document.scrollWidth <= innerWidth", "无元素 right > innerWidth", "触控目标 >= 44px"], source="baseline")
+    if combo >= 2 and len(bps) >= 2:
+        # 组合档：把"多视口"展开成逐断点场景（单点档只给一条 viewport="all"）
+        for bp in bps:
+            b.add("视口 %s 适配" % bp, "7.4", viewport=bp,
+                  expected="该断点无横向溢出、元素不跑出视口、触控目标达标",
+                  assertions=["document.scrollWidth <= innerWidth", "无元素 right > innerWidth", "触控目标 >= 44px"],
+                  source="combo")
+    else:
+        b.add("多视口态", "7.4", viewport="all", expected="各断点无横向溢出、元素不跑出视口",
+              assertions=["document.scrollWidth <= innerWidth", "无元素 right > innerWidth", "触控目标 >= 44px"], source="baseline")
     b.add("长文本与多语言", "7.21", action={"type": "input", "value": ANOMALY_DATA[2]["value"]},
           expected="长文案下布局不破坏", source="baseline")
     b.add("密集数据", "7.21", expected="多条目下列表密度、行高与设计一致", safety="caution", source="baseline")
@@ -186,12 +222,21 @@ def build(args) -> dict:
         # 按输入框序号轮转取样：固定取前 N 条会让 long-url / html-injection /
         # extreme-number 等排在后面的用例在默认参数下永远覆盖不到。
         offset = input_index % len(ANOMALY_DATA)
-        samples = [ANOMALY_DATA[(offset + k) % len(ANOMALY_DATA)] for k in range(min(args.max_data_cases, len(ANOMALY_DATA)))]
+        samples = [ANOMALY_DATA[(offset + k) % len(ANOMALY_DATA)] for k in range(min(data_cases, len(ANOMALY_DATA)))]
         for sample in samples:
             b.add("『{}』输入{}".format(element["anchor"], CASE_LABEL.get(sample["id"], sample["id"])),
                   "7.17", level="element", element=element, action={"type": "input", "value": sample["value"]},
                   expected=sample["expect"], data={"case": sample["id"], "value": sample["value"]},
                   assertions=["输入后布局不溢出", "占位与光标位置正常"], safety="caution", source="anomaly-data")
+        # 组合档：异常输入 × 断点（仅前 3 个高风险输入、每输入 2 个样本 × 首尾断点，防爆炸）
+        if combo >= 2 and bps and input_index < 3:
+            for sample in samples[:2]:
+                for bp in (bps[0], bps[-1]):
+                    b.add("『{}』输入{} @ {}".format(element["anchor"], CASE_LABEL.get(sample["id"], sample["id"]), bp),
+                          "7.4", level="element", element=element,
+                          action={"type": "input", "value": sample["value"]}, viewport=bp,
+                          expected="该断点下异常输入不破坏布局", data={"case": sample["id"], "value": sample["value"], "viewport": bp},
+                          assertions=["输入后布局不溢出"], safety="caution", source="combo")
         if item.get("type") in ("number", "tel", "password", "date", "search"):
             b.add("原生控件细节（{}）".format(item.get("type")), "7.28", level="element", element=element,
                   action={"type": "none"}, expected="原生控件外观与交互符合设计，不出现浏览器默认样式破坏布局",
@@ -238,6 +283,8 @@ def build(args) -> dict:
     return {
         "version": "2.0",
         "page": page_url,
+        "comboDepth": combo,
+        "breakpoints": bps,
         "generatedFrom": {
             "design": str(args.design) if args.design else None,
             "page": str(args.page) if args.page else None,
@@ -262,6 +309,9 @@ def main() -> int:
     ap.add_argument("--max-elements", type=int, default=60, help="每类元素最多生成多少条元素级场景")
     ap.add_argument("--max-data-cases", type=int, default=6, help="每个输入框最多生成多少条异常数据场景")
     ap.add_argument("--max-scenarios", type=int, default=300)
+    ap.add_argument("--combo-depth", type=int, default=1,
+                    help="组合深度：1=单点（默认，输出与不放宽时一致）；2=引入 state×viewport×异常数据组合")
+    ap.add_argument("--breakpoints", default="1440,1280,768,375", help="组合用的断点，逗号分隔")
     ap.add_argument("--output", required=True, type=Path)
     args = ap.parse_args()
 

@@ -35,6 +35,10 @@
     {"id": "7.31", "name": "滚动 UX", "scope": "滚动条、固定底栏遮挡、sticky 头部、滚动锁定", "owner": "references/bug-driven-checks.md", "automation": "script", "script": "scripts/extra_checks.js"},
     {"id": "7.32", "name": "页面级状态残留", "scope": "SPA 路由切换、多标签页、返回/刷新后状态", "owner": "references/bug-driven-checks.md", "automation": "partial", "script": "scripts/discover_scenarios.py"},
     {"id": "7.33", "name": "接口异常与慢网络下的界面", "scope": "5xx、超时、慢网下的白屏/骨架残留/错误提示", "owner": "references/bug-driven-checks.md", "automation": "partial", "script": "scripts/discover_scenarios.py"},
-    {"id": "7.34", "name": "角色与权限态视图差异", "scope": "不同角色看到的结构与操作差异", "owner": "references/bug-driven-checks.md", "automation": "none"}
+    {"id": "7.34", "name": "角色与权限态视图差异", "scope": "不同角色看到的结构与操作差异", "owner": "references/bug-driven-checks.md", "automation": "none"},
+    {"id": "7.35", "name": "运行期 JS 异常", "scope": "console.error / window.onerror / unhandledrejection", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
+    {"id": "7.36", "name": "交互期网络失败", "scope": "fetch/XHR 非 2xx 或网络错误（含 5xx 优先）", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
+    {"id": "7.37", "name": "重复请求/重复提交", "scope": "同一写请求在短窗口内重复发出", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
+    {"id": "7.38", "name": "可交互元素遮挡", "scope": "可交互元素被其他元素覆盖、点击落不到", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"}
   ]
 }

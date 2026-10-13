@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
-description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.11.0
+description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
+version: 4.12.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -43,6 +43,7 @@ references 里的 `7.x` 一律指检查维度，不指流程步骤。
 | 响应式 | `references/responsive.md` |
 | 行为、健壮性与资源偏好维度 | `references/bug-driven-checks.md`、`references/button-audit.md`、`references/aria-diff.md` |
 | 状态覆盖 | `references/state-journey.md` |
+| 运行期观测（异常/网络/重复提交/遮挡） | `references/runtime-observability.md` |
 | 回归 | `references/baseline-regression.md` |
 | 报告与门禁 | `references/report-templates.md`、`references/gates.md` |
 | 脚本命令与执行顺序 | `references/script-orchestration.md` |
@@ -157,13 +158,18 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 维度 7.24–7.34 的静态探测用 `scripts/extra_checks.js`：图片比例与加载失败、暗色模式、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留。该脚本只做无副作用探测，不点击不提交。
 
-### 6. 五层检查
+维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
+
+场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 引入 state×viewport×异常数据的组合场景，并把元素级场景按风险排序后取用（危险/写操作优先）。元素级与数据级场景有数量上限，被截断时必须在报告写明。
+
+### 6. 六层检查
 
 1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 必须一致，尺寸不等时不缩放硬比。
 2. **样式层**：逐字段比对结果按 `references/extraction.md` 与 `references/figma-fields.md` 复核；图标成对精确比对按 `references/icon-diff.md`。
 3. **行为层**：按 `references/button-audit.md` 做三层判定（静态可见 / 可交互 / 结果生效）；弹层打开后必须补充盘点。落地脚本 `scripts/button_audit.js`、`scripts/node/run_button_audit.cjs`、`scripts/gen_button_report.cjs`。
 4. **健壮性层**：响应式按 `references/responsive.md` 与 `assert_constraints.py`；溢出、遮挡、层级、键盘、焦点、ARIA 按 `references/aria-diff.md` 与 `references/bug-driven-checks.md`；长文本与异常数据按该文件的断言细则执行。
-5. **回归层**：按 `references/baseline-regression.md` 与**已确认基线**比较，输出新增、已修复、持续、波动和无法比较项。未确认的临时基线只作参考，不据此判定方向。
+5. **运行期层**：交互前安装 `scripts/runtime_observability.js` 钩子、交互后采集——7.35 运行期 JS 异常、7.36 交互期网络失败、7.37 重复提交、7.38 元素遮挡，判据与安全边界见 `references/runtime-observability.md`。未安装钩子或本轮无交互时，相应维度填 `notRun` 并写明原因。
+6. **回归层**：按 `references/baseline-regression.md` 与**已确认基线**比较，输出新增、已修复、持续、波动和无法比较项。未确认的临时基线只作参考，不据此判定方向。
 
 ### 7. 交互安全策略
 

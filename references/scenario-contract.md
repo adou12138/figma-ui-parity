@@ -88,6 +88,13 @@ Figma 节点 dump ──extract_design_fields.py──▶ design_model.json ─�
 - `safety` 必须按风险分级：`danger` 场景默认只允许静态检查；仅当本次 `run-manifest.json` 明确为 `safetyPolicy=all` 且 `testEnvironmentConfirmed=true` 时，才允许真实点击或执行，具体遵循 `button-audit.md`。
 - 元素级场景上限由 `--max-elements` 控制，异常数据场景上限由 `--max-data-cases` 控制；被截断时必须在报告里写明，不得静默丢场景。
 
+组合深度（`--combo-depth`）：
+
+- `--combo-depth 1`（默认）：单点场景，输出与不放宽时一致。
+- `--combo-depth 2`：引入 **state × viewport × 异常数据** 的组合场景——多视口展开成逐断点（`source=combo`、带 `viewport`）、高风险输入追加"异常数据 × 首尾断点"、表单密集页（有 `forms` 且输入 ≥3）自动加深异常数据覆盖。产物新增 `comboDepth` 与 `breakpoints` 两个顶层字段。
+- 元素级场景一律**按风险排序后取用**（危险/写操作、无名称图标按钮、缺 label 的输入靠前），让有限的 `--max-elements` 预算先打高价值目标；这只改选择先后，不改上限、不增总数。
+- `--breakpoints`（默认 `1440,1280,768,375`）控制组合用的断点集合。
+
 ## 四、缺失输入时的行为
 
 | 缺失 | 后果 | 必须怎么做 |
