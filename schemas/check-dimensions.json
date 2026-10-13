@@ -39,6 +39,7 @@
     {"id": "7.35", "name": "运行期 JS 异常", "scope": "console.error / window.onerror / unhandledrejection", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
     {"id": "7.36", "name": "交互期网络失败", "scope": "fetch/XHR 非 2xx 或网络错误（含 5xx 优先）", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
     {"id": "7.37", "name": "重复请求/重复提交", "scope": "同一写请求在短窗口内重复发出", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
-    {"id": "7.38", "name": "可交互元素遮挡", "scope": "可交互元素被其他元素覆盖、点击落不到", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"}
+    {"id": "7.38", "name": "可交互元素遮挡", "scope": "可交互元素被其他元素覆盖、点击落不到", "owner": "references/runtime-observability.md", "automation": "script", "script": "scripts/runtime_observability.js"},
+    {"id": "7.39", "name": "多页用户旅程", "scope": "跨页导航：404/500 落地页、落地空白、链接无反应、返回中断、中途弹登录", "owner": "references/journeys.md", "automation": "script", "script": "scripts/node/run_journeys.cjs"}
   ]
 }

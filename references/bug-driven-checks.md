@@ -564,6 +564,10 @@ node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/s
 `--rank` 按严重度+置信度对报告缺陷做风险排序（输出 Top N）。新缺陷模式只增不改 id，
 避免同一类问题下次再漏。
 
+### 7.39 多页用户旅程
+
+逐页面走查看不到跨页流程里炸的问题。`scripts/node/run_journeys.cjs` 从起始页实时提取同源候选链接（排除危险词/下载/新标签页/锚点），BFS 有界点击走查（`--max-hops` / `--max-links-per-page` / `--max-visits` 防链接图爆炸），每步采集运行期观测（7.35–7.38 经 addInitScript 自动装钩）并判定落地页缺陷。判据：落地文档 4xx/5xx、落地页近空白、返回后近空白 → confirmed P1；链接点击无反应、已登录态被弹登录页 → pending（SPA 可能没渲染完/可能是设计使然，无确定证据不落缺陷）。完整边界见 `references/journeys.md`。
+
 ## 六、维度与检测手段对照
 
 | 维度 | 静态探测（`extra_checks.js`） | 场景驱动 | 需要人工确认 |
