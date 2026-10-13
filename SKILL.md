@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.16.0
+version: 4.17.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -164,7 +164,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
 
-场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 引入 state×viewport×异常数据的组合场景，并把元素级场景按风险排序后取用（危险/写操作优先）。元素级与数据级场景有数量上限，被截断时必须在报告写明。
+场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 引入 state×viewport×异常数据的组合场景，并把元素级场景按风险排序后取用（危险/写操作优先）。加 `--patterns assets/defect_patterns.json` 可接入缺陷模式池闭环：历史高频翻车的维度即使被页面内容门槛挡住也会补出页面级场景（`source=pattern-deep`）、表单校验类高发时加深异常数据，产物 `patternFeedback` 写明加权依据；该模式只影响覆盖与深度，不自动生成断言，且不传 `--patterns` 时输出与接入前完全一致。元素级与数据级场景有数量上限，被截断时必须在报告写明。
 
 ### 6. 六层检查
 

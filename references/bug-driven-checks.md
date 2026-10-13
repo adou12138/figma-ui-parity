@@ -564,6 +564,14 @@ node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/s
 `--rank` 按严重度+置信度对报告缺陷做风险排序（输出 Top N）。新缺陷模式只增不改 id，
 避免同一类问题下次再漏。
 
+**模式池反哺场景生成（闭环）**：`discover_scenarios.py --patterns assets/defect_patterns.json`
+让"历史翻车最多的维度"这一轮**一定被覆盖到**——权重 = Σ(等级权重 × 命中次数)，
+被页面内容门槛挡住的高频维度会补出页面级场景（`source=pattern-deep`），表单校验类高发时
+每个输入框的异常数据条数加深。产物里 `patternFeedback` 写明本轮加权了哪些维度、依据多少条
+历史模式、加深了什么，报告可查。**边界同前：只影响覆盖与深度，不自动生成断言**（从一条历史
+缺陷推不出修复后的正确行为）；场景顺序不变，保持 `S-xxxx` 编号稳定便于与已确认基线对照；
+不传 `--patterns` 时输出与接入前完全一致。
+
 ### 7.39 多页用户旅程
 
 逐页面走查看不到跨页流程里炸的问题。`scripts/node/run_journeys.cjs` 从起始页实时提取同源候选链接（排除危险词/下载/新标签页/锚点），BFS 有界点击走查（`--max-hops` / `--max-links-per-page` / `--max-visits` 防链接图爆炸），每步采集运行期观测（7.35–7.38 经 addInitScript 自动装钩）并判定落地页缺陷。判据：落地文档 4xx/5xx、落地页近空白、返回后近空白 → confirmed P1；链接点击无反应、已登录态被弹登录页 → pending（SPA 可能没渲染完/可能是设计使然，无确定证据不落缺陷）。完整边界见 `references/journeys.md`。

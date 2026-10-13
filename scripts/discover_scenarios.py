@@ -73,6 +73,34 @@ def input_risk(item: dict) -> int:
     return 0 if not item.get("labelled") else 1  # 缺 label 关联的输入靠前
 
 
+# ---------- 缺陷模式池反哺（可选，--patterns） ----------
+# 闭环落点：让"上一轮翻车最多的维度"这一轮**一定被覆盖到**（补齐被内容门槛挡掉的场景、
+# 加深异常数据），而不是让 agent 自觉多测。**只影响覆盖与深度，不自动生成断言**——
+# 从一条历史缺陷推不出"修复后的正确行为"，自动生成会产生错误断言（同 wjx 闭环边界）。
+SEV_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1}
+
+
+def pattern_weights(path) -> dict:
+    """读缺陷模式池 → {dimension: 权重}。权重 = Σ(等级权重 × 命中次数)。"""
+    weights = {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return weights
+    for p in (data.get("patterns") or []):
+        dim = str(p.get("dimension") or "").strip()
+        if not dim:
+            continue
+        sev = str(p.get("severity") or "P2").upper()
+        w = SEV_WEIGHT.get(sev, 2)
+        try:
+            hits = max(1, int(p.get("hits") or len(p.get("sources") or []) or 1))
+        except (TypeError, ValueError):
+            hits = 1
+        weights[dim] = weights.get(dim, 0) + w * hits
+    return weights
+
+
 class Builder:
     def __init__(self, page_url: str, max_scenarios: int):
         self.items: list = []
@@ -135,6 +163,16 @@ def build(args) -> dict:
     if combo >= 2 and page.get("forms") and len(inputs) >= 3:
         data_cases = min(len(ANOMALY_DATA), data_cases + 3)
 
+    # 缺陷模式池反哺：历史高频翻车的维度即使被内容门槛挡住也补场景、异常数据加深。
+    # 不传 --patterns 时 weights 为空，下面所有分支都不触发——输出与接入前完全一致。
+    weights = pattern_weights(args.patterns) if getattr(args, "patterns", None) else {}
+    hot = {d for d, w in weights.items() if w > 0}
+    deepened = {}
+    if "7.17" in hot and len(inputs) >= 1:
+        before = data_cases
+        data_cases = min(len(ANOMALY_DATA), data_cases + 2)
+        deepened["7.17"] = {"reason": "历史表单校验类缺陷高发", "dataCases": "%s→%s" % (before, data_cases)}
+
     b = Builder(page_url, args.max_scenarios)
 
     b.add("页面默认态", "7.1", expected="整页样式与设计一致",
@@ -187,9 +225,22 @@ def build(args) -> dict:
               expected="返回后筛选/滚动/展开态不残留或按设计重置",
               assertions=["返回后列表状态与首次进入一致"],
               runner="node/run_state_scenarios.cjs", source="dimension")
+    elif "7.32" in hot:
+        # 池里有状态残留类历史缺陷，但本页没识别到 tabs/table/pagination → 仍补一条页面级
+        # 往返场景：hash 导航 + 返回是页面级动作，不需要元素也能实测（记录动因，不静默补）。
+        b.add("路由切换后状态（按历史缺陷模式补充）", "7.32", action={"type": "route-back"},
+              expected="返回后筛选/滚动/展开态不残留或按设计重置",
+              assertions=["返回后页面状态与首次进入一致"],
+              runner="node/run_state_scenarios.cjs", source="pattern-deep")
+        deepened["7.32"] = {"reason": "池内该维度有历史缺陷但页面未识别到路由类元素，按模式补页面级往返场景"}
     if scrollables:
         b.add("滚动容器与固定元素", "7.31", expected="固定底栏不遮挡内容、sticky 头部不互相重叠",
               assertions=["最后一行内容可完整滚动到可视区", "sticky/fixed 元素不遮挡可点击区域"], source="page-inventory")
+    elif "7.31" in hot:
+        b.add("滚动与固定元素（按历史缺陷模式补充）", "7.31",
+              expected="固定底栏不遮挡内容、无弹层时页面滚动不被锁死",
+              assertions=["body 未被无谓锁定滚动", "fixed/sticky 元素不遮挡可点击区域"], source="pattern-deep")
+        deepened["7.31"] = {"reason": "池内该维度有历史缺陷但页面未识别到滚动容器，补页面级滚动 UX 场景"}
     if (page.get("viewport") or {}).get("dpr"):
         b.add("截图倍率一致性", "7.1", expected="设计稿导出倍率与页面截图 deviceScaleFactor 相同", source="dimension")
     for overlay in overlays[: min(5, args.max_elements)]:
@@ -295,6 +346,18 @@ def build(args) -> dict:
             "design": str(args.design) if args.design else None,
             "page": str(args.page) if args.page else None,
             "pairs": str(args.pairs) if args.pairs else None,
+            "patterns": str(getattr(args, "patterns", "") or "") or None,
+        },
+        "patternFeedback": {
+            "applied": bool(weights),
+            "pool": str(getattr(args, "patterns", "") or "") or None,
+            "weights": {d: weights[d] for d in sorted(weights, key=lambda x: -weights[x])[:10]},
+            "hotDimensions": sorted(hot),
+            "deepened": deepened,
+            "note": "历史缺陷模式只影响「哪些维度必被覆盖」与「异常数据深度」，"
+                    "不自动生成断言——从一条历史缺陷推不出修复后的正确行为。"
+                    "场景顺序不变（保持 S-xxxx 编号稳定，便于与已确认基线/人工引用对照）。"
+                    if weights else "未接入缺陷模式池（--patterns），输出与接入前完全一致。",
         },
         "inputStats": {"buttons": len(buttons), "inputs": len(inputs), "images": len(images),
                        "overlays": len(overlays), "interactionKinds": sorted(kinds), "roles": roles},
@@ -317,6 +380,8 @@ def main() -> int:
     ap.add_argument("--max-scenarios", type=int, default=300)
     ap.add_argument("--combo-depth", type=int, default=1,
                     help="组合深度：1=单点（默认，输出与不放宽时一致）；2=引入 state×viewport×异常数据组合")
+    ap.add_argument("--patterns", default=None,
+                    help="缺陷模式池 JSON（assets/defect_patterns.json）：历史高频翻车的维度必被覆盖并加深异常数据；不传则输出与接入前完全一致")
     ap.add_argument("--breakpoints", default="1440,1280,768,375", help="组合用的断点，逗号分隔")
     ap.add_argument("--output", required=True, type=Path)
     args = ap.parse_args()
