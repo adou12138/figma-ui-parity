@@ -226,7 +226,8 @@ function diff(aIn, bIn, opts) {
       if (enhanced) flags[i] = 1;
       mask[di] = 239; mask[di + 1] = 68; mask[di + 2] = 68; mask[di + 3] = 180; // 红，半透明
     } else {
-      weak++;                                          // 超过噪点门槛但未过判定线：弱差异
+      // weak 只记"没越判定线"的：被边缘规则抑制的像素已越过 th，语义不同，不重复计入
+      if (!enhanced || d <= th) weak++;
       mask[di + 3] = 0;
     }
   }

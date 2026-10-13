@@ -101,6 +101,28 @@ function makeImg(w, h, fill) {
     e.mode === 'enhanced' && e.weakPixels != null && e.suppressed != null && typeof e.note === 'string', JSON.stringify(Object.keys(e)));
 }
 
+/* ---- 9) 回归（v4.17.0 审查）：边缘抑制的像素不重复计入 weak ----
+ * 边缘像素差 30：越过 th(16) 但被边缘规则（×2.5=40）容忍 → 只算 edgeNoise，
+ * 不该同时算 weak（否则同一批像素被两种口径各数一遍，报告上"差一点点"被夸大）。
+ */
+{
+  const edge = (v) => makeImg(20, 20, (x, y) => (x === 10 ? [v, v, v, 255] : (x < 10 ? [20, 20, 20, 255] : [240, 240, 240, 255])));
+  const e = diff(edge(180), edge(210), { enhanced: true });
+  check('边缘抑制像素不计入 weakPixels',
+    e.suppressed.edgeNoise === 20 && e.weakPixels === 0, JSON.stringify({ edge: e.suppressed.edgeNoise, weak: e.weakPixels }));
+}
+
+/* ---- 10) 基础模式与增强模式的 changedPixels 在"无噪点"时必须一致 ---- */
+{
+  // 整块强变色（无边缘、无孤立）：两种模式都应数满，证明默认关闭时口径未变
+  const a = makeImg(30, 30, [255, 255, 255, 255]);
+  const b = makeImg(30, 30, (x, y) => (x >= 5 && x < 25 && y >= 5 && y < 25) ? [0, 0, 0, 255] : [255, 255, 255, 255]);
+  const p = diff(a, b, {});
+  const e = diff(a, b, { enhanced: true });
+  check('无噪点场景两模式 changedPixels 一致', p.changedPixels === e.changedPixels && p.diffScore === e.diffScore,
+    JSON.stringify({ plain: p.changedPixels, enhanced: e.changedPixels }));
+}
+
 console.log('----');
 console.log('pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

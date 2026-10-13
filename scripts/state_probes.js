@@ -266,10 +266,14 @@
   }
 
   function effectiveBg(el) {
+    // 上溯找最近的非透明祖先背景。**必须检查 documentElement 自身**：深色主题最常见的
+    // 写法就是 html{background:#121212} + body 透明，若在到达 html 前就跳出循环并返回
+    // 白色兜底，正确适配深色的页面会被误判成"未做深色适配"（假阳性）。
     var node = el;
-    while (node && node !== document.documentElement) {
+    while (node) {
       var bg = parseColor(getComputedStyle(node).backgroundColor);
       if (bg && bg.a > 0.05) return bg;
+      if (node === document.documentElement) break;
       node = node.parentElement;
     }
     return { r: 255, g: 255, b: 255, a: 1 };

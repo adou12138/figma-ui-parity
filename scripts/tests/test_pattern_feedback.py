@@ -135,6 +135,39 @@ class PatternFeedbackTests(unittest.TestCase):
             self.assertLessEqual(len(fed["scenarios"]), 8, "反哺不得突破 --max-scenarios 上限")
             self.assertTrue(fed["truncation"]["dropped"] >= 0)
 
+    def test_no_false_deepened_claim(self):
+        """回归（v4.17.0 审查）：异常数据已达上限时不得声称"已加深"——报告不诚实比不加深更糟。"""
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            pool = tmp / "pool.json"
+            pool.write_text(json.dumps(POOL_HOT_32, ensure_ascii=False), encoding="utf-8")
+            fed = _build(tmp, _page(), patterns=pool)
+            self.assertIn("7.17", fed["patternFeedback"]["deepened"],
+                          "有加深空间时应记录 deepened")
+            at_cap = _build_at_cap(tmp, pool, len(DS.ANOMALY_DATA))
+            self.assertNotIn("7.17", at_cap["patternFeedback"]["deepened"],
+                             "无可加深空间时不得记 deepened（避免虚报）")
+
+
+def _build_at_cap(tmp: Path, pool: Path, n_data: int) -> dict:
+    """以 max_data_cases == len(ANOMALY_DATA) 构造：数据条数已到上限，加深无处可加。"""
+    pf = tmp / "page_cap.json"
+    pf.write_text(json.dumps(_page(), ensure_ascii=False), encoding="utf-8")
+
+    class Args:
+        design = None
+        page = pf
+        pairs = None
+        page_url = None
+        roles = None
+        max_elements = 60
+        max_data_cases = n_data
+        max_scenarios = 300
+        combo_depth = 1
+        breakpoints = "1440,1280,768,375"
+        patterns = pool
+    return DS.build(Args())
+
 
 if __name__ == "__main__":
     unittest.main()

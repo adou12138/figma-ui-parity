@@ -233,10 +233,29 @@ async function extractLinks(page, baseUrl) {
   return links;
 }
 
+/**
+ * 是否像"被弹回登录页"。**必须按路径段精确匹配**：原先用子串找 '/auth'，会把
+ * '/author/list'、'/authors' 这类正常业务页判成登录页 → 假阳性（用户在自己的
+ * 作者管理页被告知"登录态丢失"）。OAuth 回调（/oauth/callback）也不算登录页。
+ */
 function looksLikeLogin(url) {
-  const u = String(url || '').toLowerCase();
-  return u.indexOf('login') !== -1 || u.indexOf('signin') !== -1 || u.indexOf('passport') !== -1
-    || u.indexOf('/auth') !== -1 || u.indexOf('sso') !== -1;
+  const raw = String(url || '').trim();
+  if (!raw) return false;
+  let parsed = null;
+  try { parsed = new URL(raw); } catch (e) {
+    // 相对/非绝对地址退回按 / 切段判断
+    parsed = { pathname: raw.split('?')[0].split('#')[0], hostname: '' };
+  }
+  const host = String(parsed.hostname || '').toLowerCase();
+  if (host.indexOf('passport') !== -1 || host.indexOf('sso') !== -1) return true;
+  const segments = String(parsed.pathname || '').toLowerCase().split('/').filter(Boolean);
+  const LOGIN_SEGMENTS = ['login', 'signin', 'sign-in', 'logon', 'auth', 'authenticate', 'authorize'];
+  for (const seg of segments) {
+    if (LOGIN_SEGMENTS.indexOf(seg) !== -1) return true;
+  }
+  // 兼容 '?redirect=login' 这类查询参数提示（段里没有 login 但参数里有）
+  const q = raw.indexOf('?') !== -1 ? raw.slice(raw.indexOf('?') + 1).toLowerCase() : '';
+  return q.indexOf('redirect=login') !== -1 || q.indexOf('returnurl=login') !== -1;
 }
 
 async function clickLink(page, link) {
@@ -251,9 +270,18 @@ async function clickLink(page, link) {
     try { if (r.request().resourceType() === 'document') docStatus = r.status(); } catch (e) { /* ignore */ }
   };
   page.on('response', onResp);
+  // 点击前先在候选里挑**可见**的那一个：移动端/桌面端常把同一链接在 DOM 里放两份，
+  // .first() 可能命中隐藏那份 → 点击超时 → 误判"链接无反应"。
   let clicked = false;
   try {
-    if (await loc.count()) { await loc.click({ timeout: 5000 }); clicked = true; }
+    const all = page.locator('a[href="' + esc + '"]');
+    const n = await all.count();
+    for (let i = 0; i < n && !clicked; i += 1) {
+      const cand = all.nth(i);
+      if (!(await cand.isVisible().catch(() => false))) continue;
+      await cand.click({ timeout: 5000 });
+      clicked = true;
+    }
   } catch (e) { clicked = false; }
   if (!clicked) {
     page.off('response', onResp);
@@ -330,7 +358,9 @@ async function main() {
 
       const startState = await pageState(page);
       const runtimeFindings = await collectRuntime(page);
-      const links = node.hops < MAX_HOPS ? await extractLinks(page, node.url) : [];
+      // 基准用**页面实际 URL**而不是 node.url：发生重定向（/page → /page?tab=2）时，
+      // 按 node.url 解析相对链接会得到错误的绝对地址。
+      const links = node.hops < MAX_HOPS ? await extractLinks(page, startState.url) : [];
       const plan = planVisits(links, MAX_LINKS);
       const steps = [];
 

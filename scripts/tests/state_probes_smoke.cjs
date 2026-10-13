@@ -99,22 +99,56 @@ function getComputedStyle(el) {
 
 function makeEnv(mode, docSpec) {
   const win = { __vpProbe: { mode: mode } };
+  // 真实的 DOM 链：el → body → html → null。effectiveBg 上溯依赖它，必须建模。
+  const html = makeEl('html', {});
+  html.parentElement = null;
+  if (docSpec.htmlStyle) setStyle(html, docSpec.htmlStyle);
+  const body = makeEl('body', {});
+  body.parentElement = html;
+  body.innerText = docSpec.bodyText || '';
+  if (docSpec.bodyStyle) setStyle(body, docSpec.bodyStyle);
+  const bucket = (name) => (docSpec[name] || []).map((el) => {
+    if (!el.parentElement) el.parentElement = body;   // 未显式指定父节点的一律挂到 body
+    return el;
+  });
   const doc = {
     querySelectorAll: (sel) => {
-      if (sel === '*') return docSpec.all || [];
-      if (sel.indexOf('button') !== -1 || sel.indexOf('role=button') !== -1 || sel.indexOf('a[href]') !== -1 || sel.indexOf('submit') !== -1) return docSpec.buttons || [];
-      if (sel.indexOf('table') !== -1) return docSpec.tables || [];
-      if (sel.indexOf('skeleton') !== -1 || sel.indexOf('loading') !== -1 || sel.indexOf('spinner') !== -1 || sel.indexOf('shimmer') !== -1) return docSpec.skeleton || [];
-      if (sel.indexOf('error') !== -1 || sel.indexOf('empty') !== -1 || sel.indexOf('role=alert') !== -1 || sel.indexOf('toast') !== -1 || sel.indexOf('message') !== -1) return docSpec.error || [];
+      if (sel === '*') return bucket('all');
+      if (sel.indexOf('button') !== -1 || sel.indexOf('role=button') !== -1 || sel.indexOf('a[href]') !== -1 || sel.indexOf('submit') !== -1) return bucket('buttons');
+      if (sel.indexOf('table') !== -1) return bucket('tables');
+      if (sel.indexOf('skeleton') !== -1 || sel.indexOf('loading') !== -1 || sel.indexOf('spinner') !== -1 || sel.indexOf('shimmer') !== -1) return bucket('skeleton');
+      if (sel.indexOf('error') !== -1 || sel.indexOf('empty') !== -1 || sel.indexOf('role=alert') !== -1 || sel.indexOf('toast') !== -1 || sel.indexOf('message') !== -1) return bucket('error');
       return [];
     },
-    documentElement: makeEl('html', {}),
-    body: { innerText: docSpec.bodyText || '' },
+    documentElement: html,
+    body: body,
   };
   const location = { href: 'https://example.test/page' };
   // 括号包裹：SRC 以多行注释开头，裸 return 会触发 ASI（同 runtime 冒烟踩坑）
   const run = new Function('window', 'document', 'location', 'getComputedStyle', 'console', 'return (' + SRC + '\n)');
   return { call: () => run(win, doc, location, getComputedStyle, { error: () => {} }) };
+}
+
+// 回归（v4.17.0 审查抓到）：深色主题最常见的写法是 html{background:#121212} + body 透明。
+// effectiveBg 的上溯循环原先不检查 documentElement 自身就返回白色兜底 → 正确适配深色的页面
+// 被误判"未做深色适配"（假阳性，正是本 skill 最该避免的那类）。
+{
+  const el = makeEl('span', { text: '深色页面标题' });
+  setStyle(el, { color: 'rgb(238,238,238)', backgroundColor: 'rgba(0,0,0,0)' });
+  const env = makeEnv('dark', { all: [el], htmlStyle: { backgroundColor: 'rgb(18,18,18)' } });
+  const out = JSON.parse(env.call());
+  check('html 自带深色背景时不误判"未适配深色"',
+    out.findings.length === 0, JSON.stringify(out.findings).slice(0, 200));
+}
+
+// 反向边界：html 仍是浅色（真没适配深色）时必须照常出声，别把修复做成漏报
+{
+  const el = makeEl('span', { text: '浅色页面标题' });
+  setStyle(el, { color: 'rgb(17,17,17)', backgroundColor: 'rgba(0,0,0,0)' });
+  const env = makeEnv('dark', { all: [el], htmlStyle: { backgroundColor: 'rgb(255,255,255)' } });
+  const out = JSON.parse(env.call());
+  check('html 仍是浅色时照常判未适配（修复未造成漏报）',
+    out.findings.some(f => f.property === 'dark-hardcoded-light'), JSON.stringify(out.findings).slice(0, 160));
 }
 
 // 暗色采集：一个近白背景元素 → 应产出 7.25 confirmed

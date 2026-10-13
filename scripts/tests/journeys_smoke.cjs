@@ -111,6 +111,15 @@ check('login URL 识别', looksLikeLogin('https://example.test/login?next=/x') =
 check('passport URL 识别', looksLikeLogin('https://passport.example.test/') === true);
 check('正常 URL 不误判', looksLikeLogin('https://example.test/list') === false);
 
+// 回归（v4.17.0 审查抓到）：原先按子串找 '/auth'，把 /author/list、/authors 这类
+// 正常业务页判成登录页 → 用户在自己的作者管理页被报"登录态丢失"（假阳性）。
+check('/author/list 不判登录页（回归）', looksLikeLogin('https://example.test/author/list') === false);
+check('/authors 不判登录页（回归）', looksLikeLogin('https://example.test/authors') === false);
+check('/authorize 段仍判登录（OAuth 授权页）', looksLikeLogin('https://example.test/authorize') === true);
+check('OAuth 回调不判登录页', looksLikeLogin('https://example.test/oauth/callback') === false);
+check('sso 子域判登录', looksLikeLogin('https://sso.example.test/x') === true);
+check('相对地址 login 也识别', looksLikeLogin('/user/login') === true);
+
 /* ---- resolveUrl ---- */
 check('resolveUrl 解析相对路径', resolveUrl('/a/b', BASE) === 'https://example.test/a/b');
 check('resolveUrl 拒绝 javascript:', resolveUrl('javascript:void(0)', BASE) === null);

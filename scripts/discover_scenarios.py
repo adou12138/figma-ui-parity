@@ -171,7 +171,9 @@ def build(args) -> dict:
     if "7.17" in hot and len(inputs) >= 1:
         before = data_cases
         data_cases = min(len(ANOMALY_DATA), data_cases + 2)
-        deepened["7.17"] = {"reason": "历史表单校验类缺陷高发", "dataCases": "%s→%s" % (before, data_cases)}
+        # 只在**真的加深了**时才记 deepened：已达上限时记"声称加深但没加"是不诚实的
+        if data_cases > before:
+            deepened["7.17"] = {"reason": "历史表单校验类缺陷高发", "dataCases": "%s→%s" % (before, data_cases)}
 
     b = Builder(page_url, args.max_scenarios)
 

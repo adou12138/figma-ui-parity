@@ -148,7 +148,9 @@ async function runDark(page) {
   const shot = path.join(SHOTS, '7.25-dark.png');
   await page.screenshot({ path: shot }).catch(() => {});
   const findings = await probe(page, 'dark');
-  await page.emulateMedia({ colorScheme: 'light' });
+  // 还原用 null（=取消该覆盖，回到系统默认）；写死 'light' 会在深色默认环境下
+  // 污染后续 7.32/7.33 的渲染基准。
+  await page.emulateMedia({ colorScheme: null });
   return { dimension: '7.25', status: statusOfFindings(findings), findings, screenshot: shot };
 }
 
@@ -158,7 +160,7 @@ async function runPrint(page) {
   const shot = path.join(SHOTS, '7.26-print.png');
   await page.screenshot({ path: shot }).catch(() => {});
   const findings = await probe(page, 'print');
-  await page.emulateMedia({ media: 'screen' });
+  await page.emulateMedia({ media: null });
   return { dimension: '7.26', status: statusOfFindings(findings), findings, screenshot: shot };
 }
 
