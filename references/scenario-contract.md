@@ -133,6 +133,12 @@ python scripts/scenario_coverage.py --plan scenarios.json --results scenario_res
 - `status` 词表与 `coverage_gate.py` 严格一致：`pass/fail/warn/pending` = 已执行；`notRun/dataMissing` = 未执行，**原因必填**（`--enforce` 会拦截）；
 - **豁免必须显式**：`--exempt-dimensions` 列出的维度不进分母也不进分子，但在产出的 `planned.exemptDimensions` 里单列可见——不许静默；
 - 计划外的场景 ID（旧计划残留）只告警不阻塞门禁；
+- **同一场景多条记录（重跑 / 多轮回填并进）**：按「显式优先 + 已执行优先」取状态——
+  只要有一条 `pass/fail` 就算真跑过，不能因首条是 `notRun` 就判它没跑（首条写了 reason
+  时还不进 `unexplained`，等于静默低估执行率）。多记录落进 `multipleRecords`
+  （`scenarioIds` + 终态不一致的 `flakyScenarioIds`），不静默；
+- **从报告隐式回收只认计划内 ID**：回收不上的（自由文本场景名、旧计划的 ID）会落进
+  `unknownResults` 只告警，不会被误算成"已执行"或凭空制造覆盖率；
 - `scenario_coverage.py --out` 的产物形状可直接放进 `report.json` 的 `scenarios` 段，
   由 `generate_reports.py` 渲染成报告的「场景覆盖」区块（键值表）；
 - 形状定义见 `schemas/scenario-coverage.schema.json`。

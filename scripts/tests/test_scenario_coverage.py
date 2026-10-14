@@ -84,6 +84,34 @@ class ScenarioCoverageTests(unittest.TestCase):
         self.assertEqual(cov["unknownResults"], ["S-9999"])
         self.assertEqual(cov["executed"]["total"], 0)
 
+    def test_rerun_takes_executed_over_notrun(self):
+        """回归（审查抓到）：同 id 多条**显式**结果（重跑/并进）时原实现取首条
+        → 「首轮 notRun、次轮 pass」的场景被记成未执行，且因首条写了 reason 而
+        **不落 unexplained**（完全静默的漏报，执行率被低估）。"""
+        results = [
+            {"scenarioId": "S-0001", "status": "notRun", "reason": "首轮未执行"},
+            {"scenarioId": "S-0001", "status": "pass"},
+            {"scenarioId": "S-0002", "status": "pass"},
+            {"scenarioId": "S-0003", "status": "pass"},
+            {"scenarioId": "S-0004", "status": "pass"},
+            {"scenarioId": "S-0005", "status": "pass"},
+        ]
+        cov = SC.compute(PLAN, results, [])
+        self.assertEqual(cov["executed"]["total"], 5, "重跑通过的场景必须算已执行")
+        self.assertEqual(cov["executed"]["rate"], 1.0)
+        self.assertEqual(cov["notExecuted"]["total"], 0)
+        self.assertEqual(cov["notExecuted"]["unexplained"], [])
+        self.assertIn("S-0001", cov["multipleRecords"]["scenarioIds"],
+                      "多记录情况必须落进产物，不静默")
+
+    def test_multiple_records_flaky_is_named(self):
+        """同场景终态不一致 = 不稳定，应被点名（多记录的另一层信息）。"""
+        results = [{"scenarioId": s["id"], "status": "pass"} for s in PLAN["scenarios"]]
+        results.append({"scenarioId": "S-0001", "status": "fail"})
+        cov = SC.compute(PLAN, results, [])
+        self.assertIn("S-0001", cov["multipleRecords"]["flakyScenarioIds"])
+        self.assertNotIn("S-0002", cov["multipleRecords"]["flakyScenarioIds"])
+
     def test_enforce_exit_codes(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

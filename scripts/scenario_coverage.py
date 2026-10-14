@@ -121,13 +121,32 @@ def compute(plan: dict, results: list, exempt_dimensions) -> dict:
     executed, not_run, unexplained, unknown = 0, 0, [], []
     exec_by_dim, notrun_by_dim, exec_by_safety = {}, {}, {}
 
-    # 索引结果：显式结果优先于隐式回收（同 id 以显式为准，理由是显式带原因与真实状态）
+    # 索引结果。同一场景可能有多条记录（重跑 / 多轮回填并进），排序规则：
+    #   ① 显式结果优先于从报告隐式回收的痕迹（隐式只知道"跑过并有缺陷"）；
+    #   ② 同为显式时，**已执行优先于未执行** —— 只要有一条 pass/fail 就说明真跑过，
+    #      不能因为首条是 notRun 就判它没跑（那会静默低估执行率：首条写了 reason
+    #      时还不落 unexplained，等于完全看不见）。
     merged = {}
+    multi = {}
     for r in results:
         sid = r["scenarioId"]
+        multi.setdefault(sid, []).append(r)
         prev = merged.get(sid)
-        if prev is None or (prev.get("implicit") and not r.get("implicit")):
+        if prev is None:
             merged[sid] = r
+            continue
+        prev_impl = bool(prev.get("implicit"))
+        cur_impl = bool(r.get("implicit"))
+        if prev_impl and not cur_impl:
+            merged[sid] = r
+        elif prev_impl == cur_impl:
+            prev_exec = prev.get("status") in EXECUTED
+            cur_exec = r.get("status") in EXECUTED
+            if cur_exec and not prev_exec:
+                merged[sid] = r
+    multi_ids = sorted(sid for sid, rs in multi.items() if len(rs) > 1)
+    flaky = sorted(sid for sid in multi_ids
+                   if len({r.get("status") for r in multi[sid]}) > 1)
 
     counted = 0
     for sid, scene in by_id.items():
@@ -184,6 +203,12 @@ def compute(plan: dict, results: list, exempt_dimensions) -> dict:
             "total": not_run,
             "byDimension": dict(sorted(notrun_by_dim.items(), key=lambda kv: -kv[1])),
             "unexplained": unexplained,
+        },
+        "multipleRecords": {
+            "scenarioIds": multi_ids,
+            "flakyScenarioIds": flaky,
+            "note": "同一场景在结果里出现多条记录（重跑/多轮并进）。本模块按"
+                    "「显式优先 + 已执行优先」取状态；终态不一致的即不稳定。",
         },
         "unknownResults": unknown,
         "note": "场景执行率＝已执行 /（计划总数 − 显式豁免维度）。"
