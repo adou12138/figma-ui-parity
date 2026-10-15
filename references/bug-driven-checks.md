@@ -440,7 +440,7 @@
 
 - 主题切换属于状态场景：切换前后各截一次图、各提一次色值，逐项比对；切换后未刷新的元素按 7.16 处理。
 
-**执行方式**（状态场景驱动，v4.14.0 起可自动跑）：
+**执行方式**（状态场景驱动，可自动跑）：
 
 ```
 node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/state-scenarios
@@ -454,7 +454,7 @@ node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/s
 
 **执行方式**：`page.emulateMedia({ media: 'print' })` 后截图与设计稿的打印稿比对；无打印稿时只记录「未提供打印设计稿」→ `dataMissing`。**不得**因为"用户不打印"跳过而不声明。
 
-状态场景驱动（v4.14.0 起）把这一步变成可执行项：
+状态场景驱动把这一步变成可执行项：
 
 ```
 node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/state-scenarios
@@ -516,7 +516,7 @@ node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/s
 
 **执行方式**：进入列表 → 设置筛选与滚动 → 跳详情 → 返回 → 比对筛选与滚动位置是否符合设计（重置或保留）；两个标签页各改一处数据，观察是否互相覆盖。属于必须主动触发项，静态快照覆盖不到 → 没做就填 `notRun`。
 
-状态场景驱动（v4.14.0 起）自动执行其中**零写风险**的一段：
+状态场景驱动自动执行其中**零写风险**的一段：
 
 ```
 node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/state-scenarios
@@ -532,7 +532,7 @@ node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/s
 
 **判据**：白屏且无任何提示 → **高**；有提示但无重试入口 → **中**；骨架屏不消失 → **高**（用户永远看不到内容）。
 
-状态场景驱动（v4.14.0 起）自动执行：
+状态场景驱动自动执行：
 
 ```
 node scripts/node/run_state_scenarios.cjs --url "<页面>" --out ./parity-test/state-scenarios

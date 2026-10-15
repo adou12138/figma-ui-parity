@@ -39,7 +39,8 @@ Playwright 自带的 Chromium 在用户目录下，路径随版本号变化，�
 ⚠️ **不加 `--no-sandbox` 时 DevTools / CDP 调试端口绑不上**（实测：9224 端口在加 `--no-sandbox` 后才进入 LISTENING，浏览器也常起不来）。这是本方案最容易踩的坑。
 
 ```js
-// run_login.cjs  —— 需先 npm i playwright-core
+// 示例：一次性手动登录脚本（本仓库的落地实现是 scripts/node/save_auth.cjs，见下文）
+// 需先 npm i playwright-core
 const { chromium } = require('playwright-core');
 
 (async () => {
