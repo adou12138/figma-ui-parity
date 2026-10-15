@@ -49,6 +49,13 @@ class StartGateTests(unittest.TestCase):
         self.assertFalse(result["started"])
         self.assertEqual(result["trigger"], "not_a_test_start")
 
+    def test_ui_walkthrough_counts_as_test_start(self):
+        proc = run("--instruction", "帮我走查一下这个页面有没有 bug")
+        self.assertEqual(proc.returncode, 2)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["started"])
+        self.assertEqual(result["trigger"], "explicit_test_instruction")
+
     def test_url_pair_start_writes_manifest_after_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = run(

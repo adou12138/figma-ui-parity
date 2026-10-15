@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 TRIGGERS = re.compile(
     r"(开始|启动|重新执行|继续|跑|执行|检查|查看|看看|查查|验证|测|审)"
     r".*(ui\s*parity|figma|视觉|还原|走查|对照|响应式|自适应|断点|适配)"
-    r"|ui\s*parity",
+    r"|ui\s*parity|走查",
     re.I,
 )
 FIGMA_HOSTS = {"figma.com", "www.figma.com"}
