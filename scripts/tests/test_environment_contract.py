@@ -13,7 +13,7 @@ def run_check(cwd):
 
 def test_environment_reports_skill_version_and_real_browser_probe(tmp_path):
     result = run_check(tmp_path)
-    assert result["version"] == "4.5.0"
+    assert result["version"] == "4.19.0"
     ids = {item["id"] for item in result["checks"]}
     assert {"playwright-core", "headed-browser"}.issubset(ids)
     assert all(item["status"] != "unknown" for item in result["checks"])

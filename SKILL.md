@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
-description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`，state×viewport×异常数据）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.18.0
+description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
+version: 4.19.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -93,7 +93,7 @@ python scripts/start_test.py \
 
 `start_test.py` 只在识别到正式测试启动后执行 `init_workdir.py` 与 `check_environment.py`，写入 `parity-test/run-manifest.json`；缺少安全策略或 `all` 未确认隔离测试环境时以非零状态阻断，不得开始页面交互。咨询类输入直接返回 `started=false`，不产生环境检查副作用。
 
-`init_workdir.py` 负责建目录并把凭据相关忽略规则写进工作区 `.gitignore`（只追加缺失行）。`check_environment.py` 读取 `skill-dependencies.json`，只输出脱敏状态：
+`init_workdir.py` 负责建目录并把凭据相关忽略规则写进工作区 `.gitignore`（只追加缺失行）。`check_environment.py` 只输出脱敏状态——**其 8 项依赖检查硬编码在脚本内（`check_environment.py:27-52`），并不读取仓库根的 `skill-dependencies.json`**；改那份清单不会改变检查结果，要改检查项必须改脚本。另：脚本内 `VERSION` 与 SKILL.md 版本号各自维护，历史上出现过不同步。
 
 - `ready`：直接执行。
 - `partial`：核心流程继续，报告受影响能力。
@@ -129,7 +129,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 ### 3. 页面盘点与对应性预检
 
-登录态按 `references/login-detect.md` 多信号检测。若页面需要登录且没有有效 storage state，必须直接执行 `scripts/node/save_auth.cjs --url "<受保护页面>" --profile "<workdir>/parity-test/.vp_profile" --headed` 启动可见浏览器，等待用户手动登录；不得把无头 MCP 的登录页当作终点，也不得要求用户复制密码、验证码或 Cookie。登录成功后保存 `.auth/auth.storage.json`，再使用同一 profile 和认证目录执行提取。若有头脚本启动失败，记录明确缺失项并停止受保护页面阶段。用 `scripts/collect_page_inventory.js` 盘点页面资产（按钮、输入、图片、浮层、滚动容器、交互种类），零尺寸元素不入库，每个元素记录 `nth`。
+登录态按 `references/login-detect.md` 多信号检测。若页面需要登录且没有有效 storage state，必须直接执行 `scripts/node/save_auth.cjs --url "<受保护页面>" --profile "<workdir>/parity-test/.vp_profile" --headed` 启动可见浏览器，等待用户手动登录；不得把无头 MCP 的登录页当作终点，也不得要求用户复制密码、验证码或 Cookie。登录成功后保存 `.auth/auth.storage.json`，再使用同一 profile 和认证目录执行提取。若有头脚本启动失败，记录明确缺失项并停止受保护页面阶段。用 `scripts/collect_page_inventory.js` 盘点页面资产（按钮、输入、图片、浮层、滚动容器、交互种类），**宽高同时为 0** 的元素不入库（`collect_page_inventory.js:18` 判据是 `width === 0 && height === 0`；单边为 0 的元素仍会入库），每个元素记录 `nth`。
 
 再按 `references/page-design-match-check.md` 生成设计指纹与页面指纹：标题、路由、导航、区块、字段、表头、弹窗标题、关键按钮。设计稿存在多个顶层 Frame 时，必须先输出 Frame 清单，再依据名称和 URL 路径自动配对；例如“通讯录”↔`addressbook.aspx`、“管理员·管理”↔`qywxusermanage.aspx`、“成员·作答”↔`contactsanswer.aspx`、“其他设置”↔`addressbooksetting.aspx`。输出 `matched`、`suspected` 或 `mismatch`。仅当自动映射无法唯一确定时，才用 `AskUserQuestion` 请求选择；不得因为 URL 的 `node-id` 指向子组件就直接判定设计稿不足。`mismatch` 必须询问用户后才能继续；`suspected` 顶部警告；对象不匹配时不得产生正式缺陷结论。设计稿与页面尺寸不一致时，优先把浏览器调整到设计 Frame 的宽高做一比一对照，再补充用户指定的实际视口；不得在不同宽度下直接作页面级尺寸/位置结论。
 
@@ -138,11 +138,11 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 用 `scripts/compare_fields.py` 比对设计模型与页面提取结果，配对顺序为：显式 mapping → 精确文本锚点 → 名称提示（文本节点只与带文本的页面项配对，避免与同名容器错配）。
 
 - **坐标基准必须先归一**：设计坐标相对 frame，页面坐标相对文档。脚本按配对元素的中位偏移自动归一（或由 `--frame-origin` 显式给出），并在结果里输出 `positionBasis`。
-- **可比性检查**：页面视口宽与设计稿宽比例偏差 > 2% 时，尺寸与位置标记 `notComparable` 并写明原因，不得当成缺陷。
+- **可比性检查**：页面视口宽与设计稿宽比例偏差 > 2% 时，**该次比对的所有属性统一标记 `notComparable`**——`comparable` 是 `compare_fields.py` 的比对级全局参数，颜色、字体、行高、阴影、透明度等一并受影响，**不只是尺寸与位置**；必须写明原因，不得当成缺陷。
 - **属性级容差**：颜色用 ΔE（≤3）、尺寸 ±1px、位置 ±2px、字距 ±0.5px、圆角 ±1px、阴影模糊 ±2px。容差内记 `withinTolerance`，不生成缺陷。
 - **透明背景不参与比对**：`rgba(0,0,0,0)` 不是黑色，必须跳过，否则会把每个无背景元素误报为颜色不符。
 - 输出 `unmatched.designOnly` 与 `unmatched.pageOnly`，作为双向盘点（7.23）输入。
-- 按钮缺失判定必须采用双通道证据：先查页面按钮盘点，再查可见完整文本。设计按钮命中按钮盘点时记录 `matchedBy=buttonInventory`；仅命中完整文本时记录 `matchedBy=fullText` 并标记 `nonStandardEntry=true`；只有两个来源都未命中时才记录 `matchedBy=none` 并进入 `missingInPage`。
+- 按钮缺失判定必须采用双通道证据：先查页面按钮盘点，再查可见完整文本。设计按钮命中按钮盘点时记录 `matchedBy=buttonInventory`；仅命中完整文本时记录 `matchedBy=fullText` 并标记 `nonStandardEntry=true`；只有两个来源都未命中时才记录 `matchedBy=none` 并进入 `missingInPage`。**该双通道判定落地在 `scripts/node/run_button_audit.cjs`（`matchedBy=buttonInventory` 见 `:170`、`fullText`+`nonStandardEntry` 见 `:175`、`none`→`missingInPage` 见 `:177-179`），不在 `compare_fields.py`。**
 
 `constraints` 断言用 `scripts/assert_constraints.py` 执行：LEFT/TOP 位置不变、RIGHT/BOTTOM 边距不变、CENTER 中心不变、SCALE 比例不变（±2%）、FIXED 宽度不变。
 
@@ -156,21 +156,21 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 - 页面多出的元素仍必须验证可用性，不得因设计稿未画而跳过。
 - 元素级与数据级场景有数量上限，被截断时必须在报告里写明，不得静默丢弃。
 
-维度 7.24–7.34 的静态探测用 `scripts/extra_checks.js`：图片比例与加载失败、暗色模式、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留。该脚本只做无副作用探测，不点击不提交。
+静态探测用 `scripts/extra_checks.js`（只做无副作用探测，不点击不提交），其**实际覆盖的维度是 7.20 / 7.24 / 7.25 / 7.27 / 7.28 / 7.29 / 7.30 / 7.31**：图片比例与加载失败、暗色模式、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留。**7.26 打印视图、7.32 状态残留、7.33 接口异常、7.34 角色差异不在该脚本内**，须由场景驱动（`run_state_scenarios.cjs`）执行——不要把「7.24–7.34」整段默认为它已覆盖。
 
 状态类场景（暗色模式 7.25、打印视图 7.26、状态残留 7.32、接口异常 7.33）由 `scripts/node/run_state_scenarios.cjs` 驱动执行：先用 `page.emulateMedia` 切换渲染模式或 `page.route` 拦载 XHR/fetch fulfill 500（请求不到服务端、零真实写），再用 `scripts/state_probes.js` 在切换后的状态里重新探测。产物为每个维度给出 `pass/fail/pending/notRun` 状态与 findings；`staticOnly` 策略下不做页面交互，相应维度填 `notRun` 并写明原因。判定口径（哪些记 confirmed、哪些记 pending）见 `references/bug-driven-checks.md` 对应维度节。
 
-跨页用户旅程（7.39）由 `scripts/node/run_journeys.cjs` 驱动：从起始页实时提取同源候选链接（排除危险词/下载/新标签页/锚点），BFS 有界点击走查，每步采集运行期观测并判定落地页缺陷（404/500、落地空白、链接无反应、返回中断、中途弹登录），判据与安全边界见 `references/journeys.md`。
+跨页用户旅程（7.39）由 `scripts/node/run_journeys.cjs` 驱动：从起始页实时提取同源候选链接（危险词、跨源、锚点、下载类、新标签页均被剔除，`isCandidateLink` 会给出跳过原因），BFS 有界点击走查，每步采集运行期观测并判定落地页缺陷（404/500、落地空白、链接无反应、返回中断、中途弹登录），判据与安全边界见 `references/journeys.md`。**已知留痕缺口：被剔除的链接是裸 `continue` 丢弃（`run_journeys.cjs:226-228`，`planVisits:131` 同），跳过原因没有落到产物里——报告体现不出"哪些链接因何未访问"。**
 
 维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
 
-场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 引入 state×viewport×异常数据的组合场景，并把元素级场景按风险排序后取用（危险/写操作优先）。加 `--patterns assets/defect_patterns.json` 可接入缺陷模式池闭环：历史高频翻车的维度即使被页面内容门槛挡住也会补出页面级场景（`source=pattern-deep`）、表单校验类高发时加深异常数据，产物 `patternFeedback` 写明加权依据；该模式只影响覆盖与深度，不自动生成断言，且不传 `--patterns` 时输出与接入前完全一致。元素级与数据级场景有数量上限，被截断时必须在报告写明。
+场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 只加深**两类**组合：异常数据条数（`data_cases+3`）与逐断点展开（7.4 逐断点、异常输入 × 首尾断点，需 ≥2 个断点才生效）。**「state×viewport×异常数据」的说法不准确**：状态类场景（7.25 暗色、7.26 打印、7.32 状态残留、7.33 接口异常）是**无条件生成**的，与 combo-depth 无关；元素级场景按风险排序（删除/写操作、无名称图标按钮优先）也**无条件执行**，`combo=1` 同样排序。另：`run_parity_pipeline.py` 当前不传递 `--combo-depth`，该参数只在手工调用 `discover_scenarios.py` 时生效。加 `--patterns assets/defect_patterns.json` 可接入缺陷模式池闭环：历史高频翻车的维度即使被页面内容门槛挡住也会补出页面级场景（`source=pattern-deep`）、表单校验类高发时加深异常数据，产物 `patternFeedback` 写明加权依据；该模式只影响覆盖与深度，不自动生成断言，且不传 `--patterns` 时**场景清单本身**与接入前逐条一致——产物里的 `patternFeedback` 字段恒在，未接入时 `applied=false` 并附说明，那是输出结构的差异、不是场景差异。元素级与数据级场景有数量上限，被截断时必须在报告写明。
 
 **场景执行率（计划 vs 实际）**：覆盖率门禁统计的是「维度是否跑过」，**逐条场景有没有跑只能看 `scripts/scenario_coverage.py`**——把 `scenarios.json`（计划）与执行结果（显式 `--results` 文件，或从缺陷项的 `scenario` 字段 `--from-report` 自动回收）合成执行率，未执行项必须显式写明原因，`--enforce` 拦截"未写原因的未执行"与低于 `--min-rate` 的执行率，`--exempt-dimensions` 显式豁免并单列。产出形状见 `schemas/scenario-coverage.schema.json`，用法见 `references/scenario-contract.md` 第五节。
 
 ### 6. 六层检查
 
-1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 必须一致，尺寸不等时不缩放硬比。回归 diff 噪声偏高时可加 `--enhanced`（`run_parity_pipeline.py --enhanced-diff`）：抑制抗锯齿与孤立噪点，抑制量写进 `suppressed` 留痕、遮罩画淡黄；**该模式口径与基础模式不同，跨模式比基线前先确认基线同模式**。
+1. **像素层**：整页与区块 screenshot diff，按 `references/visual-parity.md`；截图前先跑 `scripts/stabilize.js`（`references/stabilization.md`）；差异量化用 `scripts/diff_score.js`（`references/diff-scoring.md`）。设计稿导出倍率与页面截图 `deviceScaleFactor` 应保持一致——**尺寸不等时 `diff_score.js:189-190` 直接返回 `size mismatch` 拒比**（CLI 侧以 `exit 2` 结束），既不缩放后硬比、也不标记 `notComparable`。因此倍率不一致的表现是"这次像素比对没跑成"，而不是"比出一大堆差异"。回归 diff 噪声偏高时可加 `--enhanced`（`run_parity_pipeline.py --enhanced-diff`）：抑制抗锯齿与孤立噪点，抑制量写进 `suppressed` 留痕、遮罩画淡黄；**该模式口径与基础模式不同，跨模式比基线前先确认基线同模式**。
 2. **样式层**：逐字段比对结果按 `references/extraction.md` 与 `references/figma-fields.md` 复核；图标成对精确比对按 `references/icon-diff.md`。
 3. **行为层**：按 `references/button-audit.md` 做三层判定（静态可见 / 可交互 / 结果生效）；弹层打开后必须补充盘点。落地脚本 `scripts/button_audit.js`、`scripts/node/run_button_audit.cjs`、`scripts/gen_button_report.cjs`。
 4. **健壮性层**：响应式按 `references/responsive.md` 与 `assert_constraints.py`；溢出、遮挡、层级、键盘、焦点、ARIA 按 `references/aria-diff.md` 与 `references/bug-driven-checks.md`；长文本与异常数据按该文件的断言细则执行。
@@ -187,7 +187,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 - `staticOnly`：不执行任何交互，仅做静态可点击性、样式、DOM、ARIA、截图和无副作用探测。
 - `danger`：在 `all` 且 `testEnvironmentConfirmed=true` 时允许点击和执行；必须保留操作前后证据并记录不可逆风险。其他策略下不点击，只做静态检查并标记人工或隔离测试环境验证。
 
-若用户未选择，安全策略为 `unselected`，所有交互相关维度必须标记 `notRun:未获得本次安全策略授权`，不得以默认安全模式代替确认。选择 `all` 但未记录 `testEnvironmentConfirmed=true` 时，必须拒绝执行 caution/danger 操作并将其标记为 `notRun:未确认隔离测试环境`。命中测试须多点采样，记录 `selector + nth`，处理 dialog/下载/新页，点击后清理副作用。隐藏容器内尺寸为 0 的按钮记为 `notObservable`，重复列表按钮按组抽样并记录 `duplicateCount`。
+若用户未选择，安全策略为 `unselected`，所有交互相关维度必须标记 `notRun:未获得本次安全策略授权`，不得以默认安全模式代替确认。选择 `all` 但未记录 `testEnvironmentConfirmed=true` 时，必须拒绝执行 caution/danger 操作并将其标记为 `notRun:未确认隔离测试环境`。命中测试须多点采样，记录 `selector + nth`，处理 dialog/下载/新页，点击后清理副作用。隐藏容器内尺寸为 0 的按钮记为 **`zero-size`**（`button_audit.js:76/100/154`，归入 `hidden` 列表，产物输出 `hidden` / `hiddenCount`；`notObservable` 一词当前不在产品代码里使用），重复列表按钮按组抽样并记录 `duplicateCount`。
 
 ### 8. 缺陷归一、去重与校验
 
@@ -259,7 +259,7 @@ python scripts/smoke_chain.py
 - 忽略项必须带 `expiresAt` 或 `reviewedAt`，过期项不得进入报告；每次运行后列出本次生效的忽略项。
 - 无可信页面对应物的字段（组件 ID、圆角平滑、原型动画、跨平台字体渲染）只能记 `pending`，禁止进入确定缺陷。
 - 响应式约束、可访问性、真实点击属于必须验证项，不得列为不可比。
-- 坐标基准未归一，或页面与设计稿宽度比例偏差 > 2% 时，位置与尺寸结论必须标 `notComparable` 并写明原因。
+- 坐标基准未归一，或页面与设计稿宽度比例偏差 > 2% 时，**该次比对所有属性的结论**必须标 `notComparable` 并写明原因（不止位置与尺寸，颜色、字体、行高、阴影等同样受影响）。
 
 ## 失败与恢复
 
