@@ -28,6 +28,27 @@ class StartGateTests(unittest.TestCase):
         self.assertTrue(result["started"])
         self.assertEqual(result["reason"], "safety_policy_required")
 
+    def test_responsive_check_counts_as_test_start(self):
+        proc = run("--instruction", "帮我看看这个页面的响应式有没有问题")
+        self.assertEqual(proc.returncode, 2)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["started"])
+        self.assertEqual(result["trigger"], "explicit_test_instruction")
+        self.assertEqual(result["reason"], "safety_policy_required")
+
+    def test_breakpoint_check_counts_as_test_start(self):
+        proc = run("--instruction", "检查一下各断点下的适配")
+        self.assertEqual(proc.returncode, 2)
+        result = json.loads(proc.stdout)
+        self.assertTrue(result["started"])
+
+    def test_bare_topic_mention_does_not_start(self):
+        proc = run("--instruction", "响应式是怎么回事")
+        self.assertEqual(proc.returncode, 0)
+        result = json.loads(proc.stdout)
+        self.assertFalse(result["started"])
+        self.assertEqual(result["trigger"], "not_a_test_start")
+
     def test_url_pair_start_writes_manifest_after_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             proc = run(
