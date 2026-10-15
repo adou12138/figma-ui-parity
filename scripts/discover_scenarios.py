@@ -152,7 +152,7 @@ def build(args) -> dict:
     empties = [e for e in (page.get("emptyStateCandidates") or []) if isinstance(e, dict)]
     scrollables = page.get("scrollables") or []
 
-    # 组合深度：1=单点（默认，输出与不放宽时一致）；>=2 引入 state×viewport×异常数据组合。
+    # 组合深度：1=单点（默认，输出与不放宽时一致）；>=2 加深异常数据条数与逐断点展开。
     combo = max(1, int(getattr(args, "combo_depth", 1) or 1))
     bps = [x.strip() for x in str(getattr(args, "breakpoints", "") or "").split(",") if x.strip()]
     # 风险排序（不改变截断上限，只改变选择先后）
@@ -381,9 +381,9 @@ def main() -> int:
     ap.add_argument("--max-data-cases", type=int, default=6, help="每个输入框最多生成多少条异常数据场景")
     ap.add_argument("--max-scenarios", type=int, default=300)
     ap.add_argument("--combo-depth", type=int, default=1,
-                    help="组合深度：1=单点（默认，输出与不放宽时一致）；2=引入 state×viewport×异常数据组合")
+                    help="组合深度：1=单点（默认，输出与不放宽时一致）；2=加深异常数据条数与逐断点展开")
     ap.add_argument("--patterns", default=None,
-                    help="缺陷模式池 JSON（assets/defect_patterns.json）：历史高频翻车的维度必被覆盖并加深异常数据；不传则输出与接入前完全一致")
+                    help="缺陷模式池 JSON（assets/defect_patterns.json）：历史高频翻车的维度必被覆盖并加深异常数据；不传则场景清单与接入前一致（产物 patternFeedback 字段恒在，未接入时 applied=false）")
     ap.add_argument("--breakpoints", default="1440,1280,768,375", help="组合用的断点，逗号分隔")
     ap.add_argument("--output", required=True, type=Path)
     args = ap.parse_args()
