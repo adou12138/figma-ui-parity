@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only dependency check for figma-ui-parity v4.21.0."""
+"""Read-only dependency check for figma-ui-parity v4.22.0."""
 from __future__ import annotations
 import json, os, shutil, subprocess, sys
 from pathlib import Path
 
-VERSION = "4.21.0"
+VERSION = "4.22.0"
 checks = []
 def add(id, status, detail): checks.append({"id": id, "status": status, "detail": detail})
 

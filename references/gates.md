@@ -2,7 +2,7 @@
 
 本文件是**防呆机制**。起因：某次对比只跑了 11 个自编检查项、对 7.1–7.21 清单里的 10 项只字未提，却照样生成了名为"UI 一致性对比报告"的产物——**"做少了"不会报错，只会静默产出一份看起来完整的报告**，这比测不出问题更危险。
 
-维度清单的权威定义在 `references/check-dimensions.md`（7.1–7.38），机器可读版在 `schemas/check-dimensions.json`。覆盖率由 `scripts/coverage_gate.py` 计算，**禁止手填**。
+维度清单的权威定义在 `references/check-dimensions.md`（7.1–7.39），机器可读版在 `schemas/check-dimensions.json`。覆盖率由 `scripts/coverage_gate.py` 计算，**禁止手填**。
 
 ## 闸 A：清单完成度自检（不可跳过）
 
