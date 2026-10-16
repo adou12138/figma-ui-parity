@@ -21,11 +21,16 @@
 const fs = require('fs');
 const zlib = require('zlib');
 
+// 【F21】平坦区均值漂移阈值：全图平均通道差 ≥ 该值且无像素越线时标记 flatRegionDrift。
+// 3/255 约等于「肉眼刚可辨认的整片色偏」，比逐像素判定线（默认 16）低一个量级——
+// 正是「主题色改浅 delta=5」这类回归的落点。
+const FLAT_DRIFT_MEAN = 3;
+
 // ---------------- PNG 解码（8-bit，colorType 0/2/4/6） ----------------
 function readPNG(buf) {
   if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG file');
   let off = 8;
-  let width = 0, height = 0, bitDepth = 0, colorType = 0;
+  let width = 0, height = 0, bitDepth = 0, colorType = 0, interlace = 0;
   const idat = [];
   while (off < buf.length) {
     const len = buf.readUInt32BE(off);
@@ -36,6 +41,7 @@ function readPNG(buf) {
       height = data.readUInt32BE(4);
       bitDepth = data[8];
       colorType = data[9];
+      interlace = data[12];
     } else if (type === 'IDAT') {
       idat.push(data);
     } else if (type === 'IEND') {
@@ -43,6 +49,9 @@ function readPNG(buf) {
     }
     off += 12 + len;
   }
+  // 【F22】交错（Adam7）PNG 的 IDAT 不是逐行扫描线，本实现按行 unfilter 会**静默
+  // 产出错误分数**（不报错、只是数字全错）。显式拒比，避免拿假分数做回归判定。
+  if (interlace !== 0) throw new Error('interlaced PNG (Adam7) not supported: interlace=' + interlace);
   if (bitDepth !== 8) throw new Error('only 8-bit PNG supported (got ' + bitDepth + ')');
   const bpp = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
   if (!bpp) throw new Error('unsupported colorType ' + colorType + ' (palette/16-bit not supported)');
@@ -182,12 +191,49 @@ function maxChannelDelta(A, B, i) {
 }
 
 // ---------------- 核心 diff ----------------
+// 【F22】按左上对齐裁剪到最小公共区（不缩放）：尺寸不等时旧版直接拒比，而管线
+// `--a figma.png --b page.png` 几乎不可能等尺寸 → 像素层永久空转。缩放会把整体错位
+// 算成无数局部差异（原设计的顾虑仍在），故只裁剪不缩放，裁剪掉的区域显式上报。
+function cropToCommon(A, B) {
+  const w = Math.min(A.width, B.width), h = Math.min(A.height, B.height);
+  const take = (img) => {
+    if (img.width === w && img.height === h) return img;
+    const out = Buffer.alloc(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      img.data.copy(out, y * w * 4, y * img.width * 4, y * img.width * 4 + w * 4);
+    }
+    return { width: w, height: h, data: out };
+  };
+  return [take(A), take(B)];
+}
+
 function diff(aIn, bIn, opts) {
   opts = opts || {};
-  const A = Buffer.isBuffer(aIn) ? readPNG(aIn) : readPNG(fs.readFileSync(aIn));
-  const B = Buffer.isBuffer(bIn) ? readPNG(bIn) : readPNG(fs.readFileSync(bIn));
+  let A = Buffer.isBuffer(aIn) ? readPNG(aIn) : readPNG(fs.readFileSync(aIn));
+  let B = Buffer.isBuffer(bIn) ? readPNG(bIn) : readPNG(fs.readFileSync(bIn));
+  // 【F22】deviceScaleFactor 一致性：同页在不同 dpr 下像素密度不同，直接比会得到
+  // 无意义分数（也无从报错）。两值都显式给出且不等时拒比；缺省不校验，保持兼容。
+  if (opts.dprA != null && opts.dprB != null && Number(opts.dprA) !== Number(opts.dprB)) {
+    return { ok: false, error: 'dpr mismatch', dprA: Number(opts.dprA), dprB: Number(opts.dprB),
+             reason: 'deviceScaleFactor 不一致（' + opts.dprA + ' vs ' + opts.dprB + '）：像素密度不同，diffScore 无意义' };
+  }
+  let sizeMismatch = null;
   if (A.width !== B.width || A.height !== B.height) {
-    return { ok: false, error: 'size mismatch', a: [A.width, A.height], b: [B.width, B.height] };
+    // 【F22】尺寸不一致：**默认仍拒比**（references/visual-parity.md 明确定为有意设计——
+    // 尺寸不同通常意味着截图倍率/视口配错，自动裁剪会把「配置错误」变成「公共区内无差异」
+    // 的假通过）。需要继续比对公共区时显式传 `--crop-to-common`，裁剪事实会进产物。
+    if (!opts.cropToCommon) {
+      return { ok: false, error: 'size mismatch', a: [A.width, A.height], b: [B.width, B.height],
+               reason: '尺寸不一致：请回到截图环节修正倍率/视口宽度（references/visual-parity.md）。'
+                     + '确需比对公共区时显式加 --crop-to-common，产物会记录未比对区域' };
+    }
+    sizeMismatch = {
+      a: [A.width, A.height], b: [B.width, B.height],
+      comparedRegion: [Math.min(A.width, B.width), Math.min(A.height, B.height)],
+      note: '尺寸不一致且已按 --crop-to-common 裁剪：仅左上对齐的最小公共区参与比对（不缩放），'
+          + '公共区以外未比对；若差异源于尺寸本身（视口/倍率/整页高度不同），本结论不成立',
+    };
+    [A, B] = cropToCommon(A, B);
   }
   let regions = [];
   if (opts.ignore) {
@@ -196,7 +242,9 @@ function diff(aIn, bIn, opts) {
       regions = j && j.regions ? j.regions : [];
     } catch (e) { /* 忽略文件损坏，继续不屏蔽 */ }
   }
-  const ignoredCount = applyIgnore(A, regions) + applyIgnore(B, regions);
+  // 【F22】忽略区域只计一次：同一次屏蔽对 A/B 各调一遍，旧版把两次计数相加
+  // → ignoredRegions 恒为真实值的两倍（报告数字虚高一倍）。
+  const ignoredCount = Math.max(applyIgnore(A, regions), applyIgnore(B, regions));
   const th = opts.threshold == null ? 16 : opts.threshold;
   const enhanced = !!opts.enhanced;
   const edgeFactor = opts.edgeFactor == null ? 2.5 : opts.edgeFactor;
@@ -206,12 +254,19 @@ function diff(aIn, bIn, opts) {
   let changed = 0;
   let weak = 0;
   let edgeNoise = 0;
+  let deltaSum = 0;
   const flags = enhanced ? new Uint8Array(total) : null;
   const mask = Buffer.alloc(total * 4);
   for (let i = 0; i < total; i++) {
     const di = i * 4;
     const d = maxChannelDelta(A, B, i);
-    if (d <= th * weakRatio) continue;                 // 明显在噪点内，不计
+    deltaSum += d;
+    // 【F21】未越判定线的差异一律计入 weak（含旧版直接 continue 掉的 ≤th*weakRatio 段）：
+    // 旧版 `if (d <= th * weakRatio) continue` 让 ≤8/255 的像素既不 changed 也不 weak、
+    // 彻底蒸发——整页系统性轻微变色（主题色改浅 delta=5）会得到 diffScore=0 的
+    // 「无变化」结论。changedPixels/diffScore 口径**不变**（仍只认 d > th）。
+    if (d > 0 && d <= th * weakRatio) { weak++; continue; }
+    if (d <= 0) continue;
     let hit = d > th;
     if (hit && enhanced) {
       const x = i % A.width, y = (i - x) / A.width;
@@ -227,7 +282,7 @@ function diff(aIn, bIn, opts) {
       mask[di] = 239; mask[di + 1] = 68; mask[di + 2] = 68; mask[di + 3] = 180; // 红，半透明
     } else {
       // weak 只记"没越判定线"的：被边缘规则抑制的像素已越过 th，语义不同，不重复计入
-      if (!enhanced || d <= th) weak++;
+      if (d <= th) weak++;
       mask[di + 3] = 0;
     }
   }
@@ -256,6 +311,11 @@ function diff(aIn, bIn, opts) {
     }
   }
   const score = +(Math.max(0, changed) / total * 100).toFixed(2);
+  const meanDelta = +(deltaSum / total).toFixed(2);
+  // 【F21 平坦区均值漂移】没有像素越线、但全图平均通道差明显 >0 ⇒ 整页轻微偏移
+  // （主题色改浅、蒙层、整体 gamma 漂移）。这类回归 diffScore=0 完全看不见，
+  // 单独置标记让人能追问，而不是把「无变化」当结论。
+  const flatRegionDrift = changed === 0 && meanDelta >= FLAT_DRIFT_MEAN;
   let maskImage = null;
   if (opts.out) { fs.writeFileSync(opts.out, writePNG(mask, A.width, A.height)); maskImage = opts.out; }
   const out = {
@@ -269,10 +329,23 @@ function diff(aIn, bIn, opts) {
     diffPercent: score,
     maskImage,
     ignoredRegions: ignoredCount,
+    // 【F21】弱差异与全图平均漂移**基础模式也报**：旧版 weakPixels 只在增强模式存在，
+    // 基础模式的「≤阈值像素」直接蒸发，报告无从看出整页轻微变色。
+    weakPixels: weak,
+    weakPercent: +(weak / total * 100).toFixed(2),
+    meanChannelDelta: meanDelta,
+    flatRegionDrift,
   };
+  // 【F22】尺寸不一致时把裁剪事实写进产物：读报告的人必须知道「只比了公共区」，
+  // 否则会把「公共区内无差异」误读成「整页一致」。
+  if (sizeMismatch) out.sizeMismatch = sizeMismatch;
+  if (flatRegionDrift) {
+    out.flatRegionDriftNote = '无像素越判定线（' + th + '），但全图平均通道差 ' + meanDelta
+      + ' ≥ ' + FLAT_DRIFT_MEAN + '：疑似整页系统性轻微变色（主题色/蒙层/gamma 漂移），'
+      + 'diffScore 对此不敏感，需人工核对像素之外的色值来源';
+  }
   if (enhanced) {
     out.mode = 'enhanced';
-    out.weakPixels = weak;
     out.suppressed = { edgeNoise, isolated };
     out.note = '增强模式：边缘自适应阈值与孤立噪点已抑制（遮罩里淡黄=被抑制的噪点），'
       + '抑制量见 suppressed，弱差异见 weakPixels（不计入 changedPixels）。'
@@ -293,13 +366,18 @@ if (require.main === module) {
   const threshold = cliArg('threshold');
   const ignore = cliArg('ignore');
   const enhanced = process.argv.includes('--enhanced');
+  const cropToCommon = process.argv.includes('--crop-to-common');
   const edgeFactor = cliArg('edge-factor');
+  const dprA = cliArg('dpr-a'), dprB = cliArg('dpr-b');
   const r = diff(a, b, {
     out,
     threshold: threshold == null ? undefined : parseInt(threshold, 10),
     ignore,
     enhanced,
+    cropToCommon,
     edgeFactor: edgeFactor == null ? undefined : parseFloat(edgeFactor),
+    dprA: dprA == null ? undefined : parseFloat(dprA),
+    dprB: dprB == null ? undefined : parseFloat(dprB),
   });
   console.log(JSON.stringify(r, null, 2));
   process.exit(r.ok ? 0 : 2);

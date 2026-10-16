@@ -114,34 +114,122 @@ def parse_px(value) -> float | None:
         return None
 
 
+def _hsl_to_rgb(h, s, l):
+    """HSL(0-360, 0-1, 0-1) → [r,g,b]（0-255）。标准 CSS 转换公式。"""
+    h = (float(h) % 360.0) / 360.0
+    s = max(0.0, min(1.0, float(s)))
+    l = max(0.0, min(1.0, float(l)))
+    if s == 0:
+        v = int(round(l * 255))
+        return [v, v, v]
+    q = l * (1 + s) if l < 0.5 else l + s - l * s
+    p = 2 * l - q
+
+    def channel(t):
+        if t < 0:
+            t += 1
+        if t > 1:
+            t -= 1
+        if t < 1.0 / 6:
+            return p + (q - p) * 6 * t
+        if t < 1.0 / 2:
+            return q
+        if t < 2.0 / 3:
+            return p + (q - p) * (2.0 / 3 - t) * 6
+        return p
+
+    return [int(round(channel(h + 1.0 / 3) * 255)),
+            int(round(channel(h) * 255)),
+            int(round(channel(h - 1.0 / 3) * 255))]
+
+
+def _num_or_pct(token, scale=255.0):
+    """`50%` → 50%*scale；`0.5` → 0.5。"""
+    token = token.strip()
+    if token.endswith("%"):
+        return float(token[:-1]) / 100.0 * scale
+    return float(token)
+
+
+# 解析失败的颜色原文（去重、限量）。留痕用：颜色静默跳过比对曾是漏测来源
+# （F19），不解析出值又不记录的话，读报告的人无从知道有哪些颜色没比过。
+_UNPARSED_COLORS: list = []
+_COLOR_SYNTAX = re.compile(r"^\s*(#[0-9a-fA-F]+|rgba?\s*\(|hsla?\s*\(|color\s*\()")
+
+
 def parse_rgb(value) -> list | None:
     """Return [r,g,b] or None. Fully transparent colors return None.
 
     `rgba(0,0,0,0)` (transparent background) must NOT be treated as black —
     doing so turns every element whose background is transparent into a
     false "color mismatch".
+
+    【F19】支持全部常见 CSS 颜色写法：`#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa`、
+    `rgb()/rgba()` 的逗号与空格两种分隔、`/ alpha` 斜杠 alpha、百分比分量，
+    以及 `hsl()/hsla()`。此前只认 `#rrggbb(aa)` 与逗号式 `rgb()`——移动端浏览器
+    实测常返回 `rgb(255 0 0 / 50%)` 与 `#abc`，这些颜色被静默跳过比对（漏测）。
+    仍无法解析且形似颜色时记入 `_UNPARSED_COLORS`（报告 parseWarnings 透出）。
     """
     rgb, alpha = None, 1.0
     if isinstance(value, (list, tuple)) and len(value) >= 3:
         rgb = [int(v) for v in value[:3]]
     elif isinstance(value, str):
         text = value.strip()
-        if text.startswith("#") and len(text) >= 7:
-            rgb = [int(text[i:i + 2], 16) for i in (1, 3, 5)]
-            if len(text) == 9:
-                alpha = int(text[7:9], 16) / 255.0
-        elif text.startswith("rgb"):
+        low = text.lower()
+        if low.startswith("#"):
+            body = text[1:]
+            if len(body) in (3, 4):                      # #abc / #abcd
+                rgb = [int(c * 2, 16) for c in body[:3]]
+                if len(body) == 4:
+                    alpha = int(body[3] * 2, 16) / 255.0
+            elif len(body) in (6, 8):                    # #rrggbb / #rrggbbaa
+                rgb = [int(body[i:i + 2], 16) for i in (0, 2, 4)]
+                if len(body) == 8:
+                    alpha = int(body[6:8], 16) / 255.0
+        elif low.startswith("rgb"):
             body = text[text.find("(") + 1:text.rfind(")")]
-            parts = [p.strip() for p in body.split(",")]
-            try:
-                rgb = [int(round(float(p))) for p in parts[:3]]
-            except ValueError:
-                return None
-            if len(parts) >= 4:
+            if "/" in body:                              # rgb(255 0 0 / 50%)
+                body, slash_alpha = body.split("/", 1)
                 try:
-                    alpha = float(parts[3])
+                    alpha = _num_or_pct(slash_alpha, 1.0)
                 except ValueError:
                     alpha = 1.0
+            parts = [p for p in re.split(r"[,\s]+", body.strip()) if p]
+            try:
+                rgb = [int(round(_num_or_pct(p))) for p in parts[:3]]
+            except ValueError:
+                rgb = None
+            else:
+                if len(parts) >= 4:                      # rgba(..., 0.5) / rgba(... 0.5)
+                    try:
+                        alpha = _num_or_pct(parts[3], 1.0)
+                    except ValueError:
+                        alpha = 1.0
+        elif low.startswith("hsl"):
+            body = text[text.find("(") + 1:text.rfind(")")]
+            if "/" in body:
+                body, slash_alpha = body.split("/", 1)
+                try:
+                    alpha = _num_or_pct(slash_alpha, 1.0)
+                except ValueError:
+                    alpha = 1.0
+            parts = [p for p in re.split(r"[,\s]+", body.strip()) if p]
+            try:
+                h = float(parts[0].rstrip("deg"))
+                s = float(parts[1].rstrip("%")) / 100.0
+                l = float(parts[2].rstrip("%")) / 100.0
+                rgb = _hsl_to_rgb(h, s, l)
+            except (ValueError, IndexError):
+                rgb = None
+            else:
+                if len(parts) >= 4:
+                    try:
+                        alpha = _num_or_pct(parts[3], 1.0)
+                    except ValueError:
+                        alpha = 1.0
+        if rgb is None and _COLOR_SYNTAX.match(text):
+            if text not in _UNPARSED_COLORS and len(_UNPARSED_COLORS) < 50:
+                _UNPARSED_COLORS.append(text)
     if rgb is None:
         return None
     if alpha <= 0.05:
@@ -222,6 +310,66 @@ def build_parent_map(tree: dict) -> dict:
     return parents
 
 
+def _name_segment_hit(name, selector):
+    """设计节点名与页面选择器的**词段**级比对，返回 'segment' / 'substring' / None。
+
+    【F17】旧实现是裸子串 `name in selector`：短节点名（`a`/`li`/`icon`）能命中大量
+    无关选择器，错配后所有属性都基于错对象 → 假失败，同时把 unmatched 计数压低
+    （掩盖真缺失）。规则：
+      - 名字先按非字母数字切段，选择器同样切段（类名/属性值都在其中）；
+      - **所有**名字段都出现在选择器段集合里 → 'segment'（唯一可给高置信的路径）；
+      - 名字 <3 字符一律不参与（`a`/`li` 这类没有区分度）；
+      - 非 ASCII 名（中文）无法切段匹配，退化为受限子串（≥2 字符）→ 'substring'
+        （低置信，调用方据此降 pending 而不是直接判 confirmed）。
+    """
+    name = str(name or "").strip().lower()
+    sel = str(selector or "").lower()
+    if not name or not sel:
+        return None
+    if not re.search(r"[a-z0-9]", name):
+        # 非 ASCII（中文）名无法按 class 段切分：退化为受限子串（≥2 字符）并标低置信，
+        # 调用方据此降 pending。长度门槛在此之前判，否则「提交」这类 2 字中文名会被误杀。
+        return "substring" if len(name) >= 2 and name in sel else None
+    if len(name) < 3:
+        return None
+    segs = {s for s in re.split(r"[^a-z0-9]+", sel) if s}
+    tokens = [t for t in re.split(r"[^a-z0-9]+", name) if t]
+    if tokens and all(t in segs for t in tokens):
+        return "segment"
+    return None
+
+
+def _unique_containing_box(parent_node, paired_snapshot, parent_of, index, used):
+    """找承接该父容器文本子项的**唯一**页面容器盒，供 F18 的样式比对。
+
+    判据：盒 bbox 完整包含已配对文本项的 bbox（左上对齐的包含关系）。候选多于一个
+    时返回 None——宁可不配（记 pending）也不赌，错配出来的样式差是纯噪音。
+    """
+    pid = str(parent_node.get("id") or "")
+    child_ids = {cid for cid, par in parent_of.items() if par == pid}
+    if not child_ids:
+        return None
+    candidates = []
+    for rec in paired_snapshot:
+        if str(rec["node"].get("id") or "") not in child_ids:
+            continue
+        r = rec["item"].get("rect") or rec["item"].get("bbox") or {}
+        if not all(isinstance(r.get(k), (int, float)) for k in ("x", "y", "w", "h")):
+            continue
+        for cand in index["boxItems"]:
+            if id(cand) in used:
+                continue
+            cr = cand.get("rect") or cand.get("bbox") or {}
+            if not all(isinstance(cr.get(k), (int, float)) for k in ("x", "y", "w", "h")):
+                continue
+            if (cr["x"] <= r["x"] and cr["y"] <= r["y"]
+                    and cr["x"] + cr["w"] >= r["x"] + r["w"]
+                    and cr["y"] + cr["h"] >= r["y"] + r["h"]):
+                candidates.append(cand)
+    uniq = list({id(c): c for c in candidates}.values())
+    return uniq[0] if len(uniq) == 1 else None
+
+
 def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None = None) -> tuple:
     """Pair design nodes with page items.
 
@@ -238,46 +386,51 @@ def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None
     index = index_page(items)
     used, pairs, unmatched = set(), [], []
 
-    def take(node, target, pair_role=None):
+    def take(node, target, pair_role=None, confidence=None):
         used.add(id(target))
         record = {"node": node, "item": target}
         if pair_role:
             record["pairRole"] = pair_role
+        if confidence:
+            record["pairConfidence"] = confidence
         pairs.append(record)
 
     for node in design_nodes:
         node_id = str(node.get("id") or "")
         is_text = bool(node.get("text"))
         pool = index["textItems"] if is_text else index["boxItems"]
-        target = None
+        target, confidence = None, None
         entry = mapping.get(node_id)
         if isinstance(entry, dict):
             selector = entry.get("selector")
             nth = int(entry.get("nth", 0) or 0)
             candidates = index["bySelector"].get(str(selector), [])
             if nth < len(candidates):
-                target = candidates[nth]
+                target, confidence = candidates[nth], "explicit"
         if target is None:
             text = ((node.get("text") or {}).get("characters") or "").strip()
             if text and index["byText"].get(text):
                 for candidate in index["byText"][text]:
                     if id(candidate) not in used:
-                        target = candidate
+                        target, confidence = candidate, "text-exact"
                         break
         if target is None:
-            name = str(node.get("name") or "").strip().lower()
+            # 【F17】name-hint 走词段比对（旧版裸子串：短名 a/li/icon 命中任何选择器，
+            # 错配后所有属性都基于错对象 → 假失败，同时 unmatched 虚低掩盖真缺失）。
+            name = node.get("name")
             if name:
                 for item in pool:
                     if id(item) in used:
                         continue
-                    selector = str(item.get("sel") or item.get("selector") or "").lower()
-                    if name and name in selector:
+                    hit = _name_segment_hit(name, item.get("sel") or item.get("selector"))
+                    if hit:
                         target = item
+                        confidence = "name-segment" if hit == "segment" else "name-substring"
                         break
         if target is None:
             unmatched.append(node)
             continue
-        take(node, target)
+        take(node, target, confidence=confidence)
 
     # 第二次机会：未配对的非文本设计节点（按钮 frame 等）允许与仍未被占用的
     # 带文本页面项配对，避免被误报为「设计稿有页面无」。
@@ -286,20 +439,21 @@ def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None
         if node.get("text"):
             still_unmatched.append(node)
             continue
-        name = str(node.get("name") or "").strip().lower()
-        target = None
+        name = node.get("name")
+        target, confidence = None, None
         if name:
             for item in index["textItems"]:
                 if id(item) in used:
                     continue
-                selector = str(item.get("sel") or item.get("selector") or "").lower()
-                if name and name in selector:
+                hit = _name_segment_hit(name, item.get("sel") or item.get("selector"))
+                if hit:
                     target = item
+                    confidence = "name-segment" if hit == "segment" else "name-substring"
                     break
         if target is None:
             still_unmatched.append(node)
         else:
-            take(node, target, pair_role="box-to-text-item")
+            take(node, target, pair_role="box-to-text-item", confidence=confidence)
     unmatched = still_unmatched
 
     # 父节点 credit：设计文本子节点配对成功时，其直接父容器（按钮 frame 等）
@@ -309,9 +463,18 @@ def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None
         paired_ids = {str(rec["node"].get("id") or "") for rec in pairs}
         credited_parents = {parent_of[pid] for pid in paired_ids if parent_of.get(pid)}
         kept = []
+        # 【F18】被 credit 的父容器（按钮 frame 等）自身样式旧版**从不参与比对**——
+        # 圆角缺失/背景色错/边框粗细这类历史高发缺陷既不在 designOnly 也不在
+        # styleDiffs，静默漏测。改为：先尝试与「承载其文本子项的最近唯一容器盒」
+        # 配对并走正常样式比对；找不到唯一候选时记 pending（不静默 credit）。
+        paired_snapshot = list(pairs)
         for node in unmatched:
             if str(node.get("id") or "") in credited_parents and not node.get("text"):
-                matched_indirect.append(node)
+                cand = _unique_containing_box(node, paired_snapshot, parent_of, index, used)
+                if cand is not None:
+                    take(node, cand, pair_role="box-credit", confidence="geometry-contained")
+                else:
+                    matched_indirect.append(node)
             else:
                 kept.append(node)
         unmatched = kept
@@ -402,7 +565,7 @@ def _font_weight(value):
 
 
 def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), comparable=True,
-                 incomparable_reason=None, color_skips=None) -> list:
+                 incomparable_reason=None, color_skips=None, pair_confidence=None) -> list:
     diffs = []
     element = {
         "selector": item.get("sel") or item.get("selector"),
@@ -418,9 +581,12 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     # 比对无意义）；颜色/文案/字号/字重等**样式类**不受视口宽度影响——
     # 旧版 comparable 是全局开关，移动端 375 对 1440 帧时连「文案写错」「主色错成蓝」
     # 都报 notComparable，整页假通过。拆成两个口径：
+    # ⚠️ 成员必须与 emit() 的 category 实参**同名**（样式类走 emit 第一参，文本类走
+    # prop.lower() → "lineheight"/"letterspacing"），**不是** TOLERANCE/DIMENSION 的
+    # tol_key（那是 "line_height_px"）。写错名字即静默失效，parity 由
+    # tests/test_style_categories.py 锁住。
     STYLE_ONLY_CATEGORIES = {"color", "characters", "font", "radius", "border",
-                             "shadow", "opacity", "lineheight", "letterspacing",
-                             "line_height", "letter_spacing"}
+                             "shadow", "opacity", "lineheight", "letterspacing"}
 
     def emit(category, prop, expected, actual, delta, tolerance_key, dimension=None) -> None:
         tol = TOLERANCE.get(tolerance_key)
@@ -428,6 +594,11 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
         # 几何类受视口比例影响；样式类恒可比
         item_comparable = comparable or str(category) in STYLE_ONLY_CATEGORIES
         status = "confirmed" if (exceeded and item_comparable) else ("notComparable" if not item_comparable else "withinTolerance")
+        # 【F17】低置信配对（中文名退化子串命中）不得直接判 confirmed——配错对象时
+        # 越界的属性差是**错对象之间的差**，报 confirmed 会刷假缺陷。降为 pending
+        # （门禁把 pending 计入 executed，不需要 reason，不影响覆盖率）。
+        if status == "confirmed" and pair_confidence == "name-substring":
+            status = "pending"
         severity = SEVERITY.get(category, SEVERITY_DEFAULT)
         diffs.append({
             "page": page_url,
@@ -443,6 +614,7 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
             "status": status,
             "notComparableReason": (incomparable_reason
                                     if not item_comparable and incomparable_reason else None),
+            "pairConfidence": pair_confidence,
             "severity": severity,
             "confidence": CONFIDENCE,
             "reproduction": [
@@ -651,7 +823,8 @@ def main() -> int:
     for rec in pairs:
         diffs.extend(compare_pair(rec["node"], rec["item"], args.page_url, args.scenario, args.viewport,
                                   offsets=offsets, comparable=comparable, incomparable_reason=incomparable_reason,
-                                  color_skips=color_skips))
+                                  color_skips=color_skips,
+                                  pair_confidence=rec.get("pairConfidence")))
     real = [d for d in diffs if d["status"] == "confirmed"]
 
     result = {
@@ -669,6 +842,10 @@ def main() -> int:
             "matchedIndirect": len(matched_indirect),
             "pairRoles": {role: len([r for r in pairs if r.get("pairRole") == role])
                           for role in {r.get("pairRole") for r in pairs if r.get("pairRole")}},
+            # 【F17】配对置信度分布：低置信（name-substring）占比高说明设计节点名与
+            # 页面选择器命名体系不一致，属性差异的可信度整体下降，需人工抽查。
+            "pairConfidence": {lv: len([r for r in pairs if r.get("pairConfidence") == lv])
+                               for lv in {r.get("pairConfidence") for r in pairs if r.get("pairConfidence")}},
             "colorCompareSkipped": len(color_skips),
         },
         "styleDiffs": diffs,
@@ -677,9 +854,15 @@ def main() -> int:
             "designOnly": [{"nodeId": n.get("id"), "name": n.get("name"), "rect": n.get("rect")} for n in unmatched_design],
             "pageOnly": [{"selector": i.get("sel") or i.get("selector"), "text": i.get("text"), "kind": i.get("_kind")} for i in unmatched_page],
         },
-        "matchedIndirect": [{"nodeId": n.get("id"), "name": n.get("name"), "matchedVia": "text-child-pair"}
+        "matchedIndirect": [{"nodeId": n.get("id"), "name": n.get("name"), "matchedVia": "text-child-pair",
+                             "status": "pending",
+                             "reason": "父容器未找到唯一承载盒，其自身样式（圆角/背景/边框/阴影）本次未比对；"
+                                       "如需覆盖请用 --mapping 显式指定该容器选择器"}
                             for n in matched_indirect],
         "colorCompareSkipped": color_skips,
+        # 【F19 留痕】形似颜色却解析失败的原文——颜色被静默跳过比对是漏测来源，
+        # 报告里必须能看见「哪些值没比过」，而不是永远空着让人以为全比了。
+        "parseWarnings": {"unparsedColors": list(_UNPARSED_COLORS)},
         "tolerance": TOLERANCE,
         "note": "unmatched.designOnly 与 unmatched.pageOnly 是双向盘点输入，需按 7.23 判定后转为缺陷或忽略",
     }
@@ -689,6 +872,9 @@ def main() -> int:
     if basis_warnings:
         for w in basis_warnings:
             print("警告：{}".format(w), file=sys.stderr)
+    if _UNPARSED_COLORS:
+        print("警告：{} 个颜色值形似 CSS 颜色但解析失败、已跳过比对（见产物 parseWarnings）：{}".format(
+            len(_UNPARSED_COLORS), "、".join(_UNPARSED_COLORS[:5])), file=sys.stderr)
     return 0
 
 
