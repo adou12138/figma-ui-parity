@@ -108,7 +108,7 @@ button_audit            → 按钮可用性与点击生效
 gen_button_report       → 按钮结果落盘
 journey_coverage        → 状态旅程覆盖率
 normalize_evidence      → 缺陷归一与去重
-pattern_pool            → 缺陷模式池累积 + 风险排序 Top（可选）
+pattern_pool            → 缺陷模式池累积 + 风险排序 Top（可选；**走 run_parity_pipeline.py 时默认执行**，见下）
 validate_defects        → 缺陷结构校验（不通过不得出报告）
 coverage_gate           → 维度覆盖率与门禁
 ignore_regions          → 忽略区到期审计

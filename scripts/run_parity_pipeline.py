@@ -55,6 +55,14 @@ def main() -> int:
                     help="diff_score 用增强模式（抗锯齿/孤立噪点抑制）；口径与基础模式不同，跨模式比基线前先确认同模式")
     ap.add_argument("--report", default=None, type=Path, help="上游 report.json")
     ap.add_argument("--outdir", default=None, type=Path)
+    ap.add_argument("--patterns", default=None, type=Path,
+                    help="缺陷模式池 JSON；默认 assets/defect_patterns.json。"
+                         "池为空时行为与不传完全一致（冷启动零影响）")
+    ap.add_argument("--no-patterns", action="store_true", help="关掉模式池接入（不传 --patterns、不跑 merge）")
+    ap.add_argument("--combo-depth", default=None, type=int,
+                    help="透传给 discover_scenarios：1=单点（默认）；2=加深异常数据与逐断点展开")
+    ap.add_argument("--roles", default=None, help="透传给 discover_scenarios：逗号分隔角色，用于 7.34")
+    ap.add_argument("--breakpoints", default=None, help="透传给 discover_scenarios：组合用断点，逗号分隔")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
@@ -98,10 +106,23 @@ def main() -> int:
                                  "--design", str(design_json), "--page", str(page_json),
                                  "--page-url", args.page_url or "",
                                  "--output", str(style_diffs)], args.dry_run, log)
+        # 模式池接入：默认把 assets/defect_patterns.json 传给 discover_scenarios，
+        # 让「历史高频翻车的维度必被覆盖」在标准管线里真的发生。池为空时
+        # pattern_weights 返回 {}、applied=false，产物与不传完全一致（冷启动零影响）。
+        pool = None if args.no_patterns else (args.patterns or (HERE.parent / "assets" / "defect_patterns.json"))
+        patterns_args = [] if pool is None else ["--patterns", str(pool)]
+        passthrough = []
+        if args.combo_depth:
+            passthrough += ["--combo-depth", str(args.combo_depth)]
+        if args.roles:
+            passthrough += ["--roles", args.roles]
+        if args.breakpoints:
+            passthrough += ["--breakpoints", args.breakpoints]
         stage("discover_scenarios", [sys.executable, str(HERE / "discover_scenarios.py"),
                                      "--design", str(design_json), "--page", str(page_json),
                                      "--pairs", str(style_diffs),
-                                     "--output", str(workdir / "scenarios.json")], args.dry_run, log)
+                                     "--output", str(workdir / "scenarios.json")] + patterns_args + passthrough,
+              args.dry_run, log)
     else:
         log["compare_fields"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json"}
         log["discover_scenarios"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json"}
@@ -121,6 +142,12 @@ def main() -> int:
               args.dry_run, log)
         stage("generate_reports", [sys.executable, str(HERE / "generate_reports.py"), "--input", str(args.report),
                                    "--outdir", str(outdir)], args.dry_run, log)
+        # 历史学习闭环的最后一环：把本轮缺陷按指纹并回池（幂等，无新模式不写盘）。
+        # 只累积与排序，不自动生成用例——见 SKILL.md 对 bug_pattern_pool 的纪律。
+        if pool is not None:
+            stage("pattern_pool_merge", [sys.executable, str(HERE / "pattern_pool.py"),
+                                         "--merge", str(args.report), "--pool", str(pool)],
+                  args.dry_run, log)
     else:
         log["baseline_regression"] = {"status": "notRun", "reason": "缺少 --report"}
         log["generate_reports"] = {"status": "notRun", "reason": "缺少 --report"}

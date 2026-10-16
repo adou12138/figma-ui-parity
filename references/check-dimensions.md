@@ -41,7 +41,7 @@
 | 7.29 | 焦点可见性与键盘细节 | `bug-driven-checks.md` | `extra_checks.js` |
 | 7.30 | 国际化细节（RTL / emoji / 全角半角） | `bug-driven-checks.md` | `extra_checks.js` |
 | 7.31 | 滚动 UX（滚动条 / 固定底栏 / sticky / 滚动锁定） | `bug-driven-checks.md` | `extra_checks.js` |
-| 7.32 | 页面级状态残留（SPA 路由 / 多标签页 / 返回刷新） | `bug-driven-checks.md` | `discover_scenarios.py` |
+| 7.32 | 页面级状态残留（SPA 路由 / 多标签页 / 返回刷新） | `bug-driven-checks.md` | `discover_scenarios.py`（**需识别到 tabs / table / pagination，或缺陷池命中 7.32**；两者都不满足时该维度无场景，应填 `notRun:页面无路由类元素`，**不是漏跑**） |
 | 7.33 | 接口异常与慢网络下的界面 | `bug-driven-checks.md` | `run_state_scenarios.cjs` |
 | 7.34 | 角色与权限态视图差异 | `bug-driven-checks.md` | 无 |
 | 7.35 | 运行期 JS 异常（console.error / onerror / unhandledrejection） | `runtime-observability.md` | `runtime_observability.js` |
