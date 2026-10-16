@@ -27,7 +27,7 @@
    * query 里有会话凭据。SKILL.md 红线「产物不得写入 token/Cookie」必须有采集端
    * 执行点，而不是只写在注释里。命中敏感键名的值一律替换为 [REDACTED]。
    */
-  const SENSITIVE_KEY = /(password|passwd|pwd|token|secret|authorization|auth|cookie|session|apikey|api[-_]?key|access[-_]?key|credential)/i;
+  const SENSITIVE_KEY = /(password|passwd|pwd|token|secret|authorization|auth|cookie|session|apikey|api[-_]?key|access[-_]?key|credential|jwt|bearer|apikey|sig|signature|ticket)/i;
   const redact = (text) => {
     let s = String(text == null ? '' : text);
     if (!s) return s;
@@ -271,8 +271,9 @@
   // 【F11】「未装钩子」与「页面干净」必须可区分：二者都产出 findings=[]，但含义完全
   // 不同——前者是"没观测到任何东西"（须 notRun），后者才是"观测到了且干净"。
   // hooksInstalled=false 或采集抛错时带显式标记，调用方不得据此填 pass。
-  const hooksInstalled = !!(obs && (obs.errors.length || obs.requests.length
-    || (Date.now() - (obs.startedAt || Date.now())) >= 0));
+  // （审查修复：原表达式 `Date.now() - startedAt >= 0` 恒真，等于没校验——
+  //   obs 存在即视为已安装钩子，这本身就是正确语义：钩子安装时会创建 __vpObs。）
+  const hooksInstalled = !!obs;
   return JSON.stringify({
     mode: 'collect',
     url: location.href,

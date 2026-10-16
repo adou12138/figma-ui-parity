@@ -341,14 +341,17 @@ def _num(value):
 
 
 def _design_radius(node):
-    """设计侧圆角：corners（独立四角）优先取 max，再回落 uniform。
+    """设计侧圆角：新格式（标量，extract_design_fields._radius_of 直接算好生效圆角）
+    优先；旧格式 dict（corners/uniform）兼容——corners 优先取 max，再回落 uniform。
 
-    【F15 反死代码】旧判定顺序 uniform 在前——extract_design_fields 的 uniform
-    恒存在（缺省 0.0），corners 分支是死代码：设计用独立四角圆角（卡片/半屏弹层
-    极常见）时设计侧恒 0、页面侧取 8 → confirmed 圆角假缺陷且淹没真缺陷。
-    （extract_design_fields 现已改为直接产出生效圆角标量，本函数对旧格式产物
-    兼容：corners 优先，uniform 真为数值且无 corners 才用。）"""
+    【F15 反死代码 + 审查修复】旧判定顺序 uniform 在前——extract_design_fields 的
+    uniform 恒存在（缺省 0.0），corners 分支是死代码：设计用独立四角圆角（卡片/
+    半屏弹层极常见）时设计侧恒 0、页面侧取 8 → confirmed 圆角假缺陷且淹没真缺陷。
+    审查发现：本函数首行 `not isinstance(r, dict): return None` 会把新格式的
+    **标量**直接判 None——圆角比对整体失活（比修复前更糟）。新格式标量直通。"""
     r = node.get("radius")
+    if isinstance(r, (int, float)) and not isinstance(r, bool):
+        return float(r)
     if not isinstance(r, dict):
         return None
     corners = r.get("corners")

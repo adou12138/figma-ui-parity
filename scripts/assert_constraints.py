@@ -59,7 +59,11 @@ def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tup
         now, before = length / b, base_len / base_frame_size
         # 【F46b】相对容差：绝对比例差 0.02 对小元素是漏测（base 比例 0.05 时
         # 50→68px 涨 36% 仍判 ok）。改为相对变化率 |now-before|/before。
-        rel = abs(now - before) / before if before else 0.0
+        # 【审查修复】before=0（基准视口元素零尺寸）时比例不可比——返回 None
+        # 让调用方计入 skippedNodes，不得静默判 ok（0 基准下任何 now 都"通过"）。
+        if not before:
+            return None, None, None
+        rel = abs(now - before) / before
         return rel <= PROPORTION_TOLERANCE, round(before, 4), round(now, 4)
     if rule == "FIXED":
         return abs(length - base_len) <= POSITION_TOLERANCE, base_len, length

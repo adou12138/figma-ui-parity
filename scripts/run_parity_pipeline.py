@@ -172,8 +172,12 @@ def main() -> int:
         # 【F3】门禁失败必须短路后续报告阶段——SKILL.md「校验不通过不得出报告」。
         # 旧行为：validate/coverage 失败只记 status=failed，继续 generate_reports 并
         # return 0，坏数据照常产出三件套报告（最危险的静默假通过）。
+        # 【审查修复】notRun 的门禁 stage 同样必须短路：stage 失败有两种形态——
+        # rc≠0 记 failed，命令本身没跑成（FileNotFound/超时）记 notRun。
+        # 「coverage_gate 根本没跑成」比「跑了判失败」更危险，却绕过下面的 failed 检查
+        # 继续出报告。notRun 一并算门禁未通过。
         gate_failed = [n for n in ("validate_defects", "coverage_gate", "assemble_report")
-                       if log.get(n, {}).get("status") in ("failed",)]
+                       if log.get(n, {}).get("status") in ("failed", "notRun")]
         if gate_failed and not args.dry_run:
             for n in gate_failed:
                 print("[abort] {} 失败，按「校验不通过不得出报告」短路后续阶段".format(n))

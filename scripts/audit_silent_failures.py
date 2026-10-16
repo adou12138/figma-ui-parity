@@ -50,11 +50,15 @@ def main() -> int:
     baseline = json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {"noTraceNearby": 0}
     baseline_n = int(baseline.get("noTraceNearby", 0))
     print("静默失败命中：%d（其中无留痕 %d；基线无留痕 %d）" % (len(hits), len(no_trace), baseline_n))
+    # 判定用【数量】口径而非逐条位置匹配：行号随代码漂移是常态，按 (file,line)
+    # 匹配会把存量命中误报为新增。数量口径的已知代价：「修 1 处 + 新增 1 处」相抵
+    # 时不红——由 stderr 的对照清单兜底（人工比对 hits 明细）。
     if len(no_trace) > baseline_n:
-        print("新增无留痕命中（必须补留痕语句或修正基线）：", file=sys.stderr)
-        known = {(h["file"], h["line"], h["pattern"]) for h in baseline.get("hits", [])}
+        print("无留痕命中数超过基线（%d > %d），新增条目："
+              % (len(no_trace), baseline_n), file=sys.stderr)
+        known = {(h["file"], h["pattern"]) for h in baseline.get("hits", []) if not h.get("traceNearby", True)}
         for h in no_trace:
-            if (h["file"], h["line"], h["pattern"]) not in known:
+            if (h["file"], h["pattern"]) not in known:
                 print("  - %s:%s %s" % (h["file"], h["line"], h["pattern"]), file=sys.stderr)
         if args.enforce:
             return 1
