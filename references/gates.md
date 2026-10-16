@@ -75,9 +75,12 @@ ID 用 `references/check-dimensions.md` 的维度号；维度名以该表为准�
 ### 覆盖率计算与门禁
 
 ```bash
+python scripts/assemble_report.py --report ./parity-test/report.json --write   # 先汇维度结论
 python scripts/coverage_gate.py --report ./parity-test/report.json --enforce --write
 ```
 
+- **checks 段由 `assemble_report.py` 生产**：它把各驱动产物按维度汇总成 `meta.checks`，
+  39 个维度一个都不能少。手工拼表既是重复劳动，也容易与驱动产物脱节。
 - 覆盖率 = (`pass` + `fail` + `warn` + `pending`) / 维度总数；`notRun` 与 `dataMissing` 都不算完成。
 - `notRun` / `dataMissing` 未写明原因 → 脚本返回非零码并列出问题项，**报告不得产出**。
 - 出现非法状态值（如把 `notRun` 写进 `pending`）→ 直接拒绝。

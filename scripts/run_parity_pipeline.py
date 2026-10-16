@@ -128,6 +128,26 @@ def main() -> int:
         log["discover_scenarios"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json"}
 
     if args.report and args.report.exists():
+        # 先把各驱动产物的维度证据汇总进 report 的 checks 段，再进门禁——否则
+        # coverage_gate 会因为「维度缺失 / notRun 未写原因」直接非零退出，而那份
+        # 39 行的维度→状态→原因表此前只能靠 agent 手工拼装。
+        # 只收管线与同目录下已存在的产物，缺的就少一路证据（该维度会落到 notRun）。
+        # **不判断有无产物**：report 里没有手写 checks 时，也要靠本阶段生成一份
+        # 全 notRun 的维度表，否则 coverage_gate 会因「维度缺失」直接非零退出。
+        af = []
+        if style_diffs.exists():
+            af += ["--style-diffs", str(style_diffs)]
+        for name, flag in (("findings.json", "--findings"),
+                           ("runtime.json", "--findings"),
+                           ("journey_findings.json", "--findings"),
+                           ("state_scenarios.json", "--state-scenarios"),
+                           ("scenario_coverage.json", "--scenario-coverage")):
+            candidate = workdir / name
+            if candidate.exists():
+                af += [flag, str(candidate)]
+        stage("assemble_report", [sys.executable, str(HERE / "assemble_report.py"),
+                                  "--report", str(args.report)] + af + ["--write"],
+              args.dry_run, log)
         stage("validate_defects", [sys.executable, str(HERE / "validate_defects.py"),
                                    "--report", str(args.report), "--strict"], args.dry_run, log)
         stage("coverage_gate", [sys.executable, str(HERE / "coverage_gate.py"),

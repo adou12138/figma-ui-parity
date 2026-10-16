@@ -70,6 +70,7 @@ python scripts/run_parity_pipeline.py \
 | `scenario_coverage.py` | `scenarios.json`（计划） + 可选执行结果 JSON / `report.json` | 场景执行率 JSON（可直接放进报告 payload 的 `scenarios` 段） | **计划 vs 实际**：`--results`/`--from-report` 回填执行痕迹，`--enforce` 拦截"未执行且未写原因"与低于 `--min-rate`，`--exempt-dimensions` 显式豁免并单列；见 `scenario-contract.md` |
 | `pattern_pool.py` | 缺陷产物 JSON（`diffs`/`styleDiffs`/`defects`/`findings`/`violations`） | 池更新（`--merge`）/ 风险排序 Top（`--rank`） | 缺陷模式池 `assets/defect_patterns.json`；`--merge` 幂等、`--rank --top N` 出 Top 列表；见 `bug-driven-checks.md` |
 | `normalize_evidence.py` | 各来源差异 JSON | 去重后的差异集合 | 按 `fingerprint` 合并，保留 `sources` 与 `evidence` |
+| `assemble_report.py` | 各驱动产物（`styleDiffs.json` / `findings.json` / `state_scenarios.json` / `scenario_coverage.json`）+ `report.json` | `report.json` 的 `meta.checks`（39 维度结论） | **进门禁前必跑**：把维度级证据汇总成 checks，缺一个维度 `coverage_gate.py` 就判缺失。边界纪律：无证据只能 `notRun`+原因，不得推断 `pass`；已有手写 checks 原样保留 |
 | `stabilize.js` | 页面 URL | 稳定化后的页面会话 | 截图前必须跑 |
 | `diff_score.js` | 两张 PNG | `diffScore` + 遮罩图 | `--threshold` 是像素噪声门槛，非百分比 |
 | `extract_containers.js` / `extract_texts.js` / `extract_icons.js` / `order_divider_scroll_check.js` | 页面 | 容器/文本/图标/分隔线数据（脚本 A–D） | 见 `extraction.md`；注意 MCP 传参吃反斜杠 |

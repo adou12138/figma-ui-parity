@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.25.0
+version: 4.26.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -229,13 +229,20 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 ### 9. 覆盖率门禁、报告与交付
 
-先过门禁，再出报告：
+先汇维度结论，再过门禁，再出报告：
 
 ```bash
+python scripts/assemble_report.py --report ./parity-test/report.json \
+  --style-diffs ./parity-test/styleDiffs.json \
+  --findings ./parity-test/findings.json \
+  --state-scenarios ./parity-test/state_scenarios.json \
+  --scenario-coverage ./parity-test/scenario_coverage.json --write
 python scripts/validate_defects.py --report ./parity-test/report.json --strict
 python scripts/ignore_regions.py --file ./parity-test/ignoredRegions.json --enforce
 python scripts/coverage_gate.py --report ./parity-test/report.json --enforce --write
 ```
+
+`assemble_report.py` 把各驱动产物（样式差异 / 探测发现 / 状态场景 / 旅程发现 / 场景执行率）按维度汇总成 `meta.checks`——**39 个维度一个都不能少**，否则 `coverage_gate.py` 会直接判「维度缺失」。它的边界纪律：**无证据的维度只能填 `notRun` + 原因，严禁推断 `pass`**（「没跑」和「跑了没发现问题」是两件事）；report 里已有的手写 checks 原样保留，人填的比机器猜的优先级高。产物路径按实际存在的传，缺的就不传（对应维度落到 `notRun`）。
 
 `coverage_gate.py` 按 `schemas/check-dimensions.json` 计算覆盖率 = (`pass`+`fail`+`warn`+`pending`) / 维度总数。`notRun` 与 `dataMissing` 必须写明原因，否则脚本拒绝；`pending` 与 `notRun` 语义不得混用。覆盖率低于 70% 时报告顶部显示「非全量覆盖」，并在给用户的总结里说明未覆盖维度。
 
