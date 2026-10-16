@@ -172,7 +172,10 @@ function stepFinding(step) {
       '文档响应状态 ' + step.docStatus + '，URL=' + step.url,
       'P1', 0.85, 'confirmed', 'journey-doc-error', { docStatus: step.docStatus, url: step.url });
   }
-  if (step.landedChars < 20 && step.docStatus !== 404) {
+  // 【F37】点击失败（noop，页面根本没动）不判「落地页空白」：没导航就没有"落地页"，
+  // 起始页本身是图标导航页（innerText<20）时每个失效链接都会刷一条假空白 P1。
+  // noop 已单独记 journey-link-noop（pending），空白判定只对真实导航后的页面做。
+  if (step.landedChars < 20 && step.docStatus !== 404 && !step.noop) {
     push('点击链接后落地页近乎空白，用户看不到任何内容',
       '落地页应渲染出内容', '落地后可见文本仅 ' + step.landedChars + ' 字符，URL=' + step.url,
       'P1', 0.75, 'confirmed', 'journey-landing-blank', { landedChars: step.landedChars, url: step.url });
@@ -274,7 +277,10 @@ function looksLikeLogin(url) {
     parsed = { pathname: raw.split('?')[0].split('#')[0], hostname: '' };
   }
   const host = String(parsed.hostname || '').toLowerCase();
-  if (host.indexOf('passport') !== -1 || host.indexOf('sso') !== -1) return true;
+  // 【F38】hostname 按「.」切段全等比较：indexOf('sso') 会命中 lesson.example.com
+  // 这类子串巧合（正常页误判「弹登录」pending 假阳）。passport/sso 必须是独立段。
+  const hostSegs = host.split('.');
+  if (hostSegs.indexOf('passport') !== -1 || hostSegs.indexOf('sso') !== -1) return true;
   const segments = String(parsed.pathname || '').toLowerCase().split('/').filter(Boolean);
   const LOGIN_SEGMENTS = ['login', 'signin', 'sign-in', 'logon', 'auth', 'authenticate', 'authorize'];
   for (const seg of segments) {
@@ -294,7 +300,13 @@ async function clickLink(page, link) {
   // 响应已先到，会永远等不到（既漏状态码又白等一个超时）。
   let docStatus = null;
   const onResp = (r) => {
-    try { if (r.request().resourceType() === 'document') docStatus = r.status(); } catch (e) { /* ignore */ }
+    try {
+      // 【F36】只认主 frame 的 document 响应：iframe 导航也匹配 resourceType==='document'，
+      // 子 frame 404 会覆盖主 docStatus 产假 P1。
+      if (r.request().resourceType() === 'document' && r.frame() === page.mainFrame()) {
+        docStatus = r.status();
+      }
+    } catch (e) { /* ignore */ }
   };
   page.on('response', onResp);
   // 点击前先在候选里挑**可见**的那一个：移动端/桌面端常把同一链接在 DOM 里放两份，
@@ -315,6 +327,9 @@ async function clickLink(page, link) {
     return { ...before, href: link.href, fromUrl: before.url, clicked: false, noop: true,
              landedChars: before.chars, url: before.url };
   }
+  // 【F36】domcontentloaded 有界等待（SPA 渲染再补 1200ms）：主文档慢返时
+  // docStatus 不会停在 null（4xx/5xx 漏判），也不会死等 8s。
+  await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {});
   await page.waitForTimeout(1200); // 等导航落定 / SPA 渲染
   page.off('response', onResp);
   const after = await pageState(page);
@@ -418,6 +433,9 @@ async function main() {
         if (visits >= MAX_VISITS) break;
         const step = await clickLink(page, link);
         const stepFindings = stepFinding(step);
+        // 【F35】成功导航的点击计入访问预算：旧版只在 BFS 出队时 +=1，for 循环内
+        // 点击导航不递增 → MAX_VISITS 检查永不触发（30 上限实际可跑 ~400 次导航）。
+        if (step.clicked && !step.noop) visits += 1;
         // 落地页的运行期观测（7.35–7.38 归其自身维度）
         const landedRuntime = step.noop ? [] : await collectRuntime(page);
         steps.push({

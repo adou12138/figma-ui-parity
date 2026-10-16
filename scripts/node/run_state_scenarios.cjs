@@ -39,6 +39,15 @@ const CHROME = arg('chrome', null);
 const HEADED = process.argv.includes('--headed');
 const SAFETY_POLICY = arg('safety-policy', 'safe'); // all | safe | mockWrites | staticOnly
 const ONLY = new Set(String(arg('only', '') || '').split(',').map(s => s.trim()).filter(Boolean));
+// 【F39】--only 合法值校验：typo（--only 7.3）会让四维度全部静默不执行，连 notRun 都不产。
+const VALID_DIMS = ['7.25', '7.26', '7.32', '7.33'];
+{
+  const bad = Array.from(ONLY).filter(d => !VALID_DIMS.includes(d));
+  if (bad.length) {
+    console.error('[x] --only 含非法维度: ' + bad.join(', ') + '（合法值: ' + VALID_DIMS.join(', ') + '）');
+    process.exit(1);
+  }
+}
 const SHOTS = path.join(OUT, 'shots');
 
 const PROBE_SRC = fs.readFileSync(path.join(__dirname, '..', 'state_probes.js'), 'utf8');
@@ -143,6 +152,14 @@ function residueFindings(before, after) {
 }
 
 async function runDark(page) {
+  // 【F41】stabilize.js 注入的 `color-scheme: light !important` 会压过
+  // emulateMedia(dark) 的 UA 暗色渲染 → 7.25「背景近白」判定系统性假阳
+  // （或掩盖真缺陷）。探测前移除该 style，探测后由调用方页面恢复流程重建。
+  await page.evaluate(() => {
+    document.querySelectorAll('style').forEach((s) => {
+      if (s.textContent && s.textContent.indexOf('color-scheme') !== -1) s.remove();
+    });
+  }).catch(() => {});
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForTimeout(400);
   const shot = path.join(SHOTS, '7.25-dark.png');
@@ -189,7 +206,15 @@ async function runFailure(page) {
     }
   };
   await page.route('**/*', handler);
-  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  // 【F39b】reload 失败 = 没真正进入异常态，照常 probe 会把旧态当异常态产 pass/pending
+  // （假绿）。失败记 notRun 返回。
+  let reloaded = true;
+  await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => { reloaded = false; });
+  if (!reloaded) {
+    await page.unroute('**/*', handler).catch(() => {});
+    return { dimension: '7.33', status: 'notRun',
+             reason: 'reload 失败，未能进入接口异常态（未验证，不得视为通过）', findings: [] };
+  }
   await page.waitForTimeout(2500); // 等骨架屏/错误提示渲染稳定
   const shot = path.join(SHOTS, '7.33-failure.png');
   await page.screenshot({ path: shot }).catch(() => {});

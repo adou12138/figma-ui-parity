@@ -246,8 +246,21 @@
 
   /* ---------------- 页内采集（驱动调用） ----------------
    * 驱动先 page.evaluate 设置 window.__vpProbe = { mode }，再整体 evaluate 本文件。
+   * 【F40】__vpProbe 跨导航丢失时不得兜底 'dark'——print/failure 探测会按 dark
+   * 判据执行，产出被贴错维度（7.26 返回 7.25 findings）。读不到 mode 时返回
+   * 显式 error，由驱动记 notRun。
    */
-  var mode = (window.__vpProbe && window.__vpProbe.mode) || 'dark';
+  var mode = window.__vpProbe && window.__vpProbe.mode;
+  if (mode !== 'dark' && mode !== 'print' && mode !== 'failure') {
+    module.exports = api;
+    return JSON.stringify({
+      error: 'probe-mode-missing',
+      detail: 'window.__vpProbe 未设置或 mode 非法（期望 dark/print/failure，得到 '
+              + JSON.stringify(mode == null ? null : String(mode)) + '）——'
+              + '本页探测未执行，驱动应记 notRun',
+      findings: [],
+    });
+  }
   var findings = [];
 
   function selectorOf(el) {
