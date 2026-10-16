@@ -124,6 +124,30 @@ check('相对地址 login 也识别', looksLikeLogin('/user/login') === true);
 check('resolveUrl 解析相对路径', resolveUrl('/a/b', BASE) === 'https://example.test/a/b');
 check('resolveUrl 拒绝 javascript:', resolveUrl('javascript:void(0)', BASE) === null);
 
+/* ---- 【F12】运行期缺陷去重键：同维度不同缺陷不得折叠，同缺陷多路径应折叠 ---- */
+{
+  const { dedupeKey } = driver;
+  const f = (dim, prop, raw) => ({ dimension: dim, property: prop, raw });
+  const differ = (a, b) => dedupeKey(a) !== dedupeKey(b);
+
+  check('7.35 两个不同 JS 错误不得折叠',
+    differ(f('7.35', 'js-error', { kind: 'js-error', text: 'TypeError: x' }),
+           f('7.35', 'js-error', { kind: 'js-error', text: 'ReferenceError: y' })));
+  check('7.36 同页不同失败码不得折叠',
+    differ(f('7.36', 'net', { method: 'POST', url: '/s', status: 404 }),
+           f('7.36', 'net', { method: 'POST', url: '/s', status: 500 })));
+  check('7.37 不同签名不得折叠',
+    differ(f('7.37', 'dup', { signature: 'POST /a' }), f('7.37', 'dup', { signature: 'POST /b' })));
+  check('7.38 不同遮挡目标不得折叠',
+    differ(f('7.38', 'overlay', { target: '.a' }), f('7.38', 'overlay', { target: '.b' })));
+  check('同一缺陷经多路径到达应折叠（occurrences 累加）',
+    !differ(f('7.35', 'js-error', { kind: 'js-error', text: 'E' }),
+            f('7.35', 'js-error', { kind: 'js-error', text: 'E' })));
+  check('不同维度永不折叠',
+    differ(f('7.35', 'js-error', { kind: 'js-error', text: 'E' }),
+           f('7.36', 'js-error', { kind: 'js-error', text: 'E' })));
+}
+
 console.log('----');
 console.log('pass=' + pass + ' fail=' + fail);
 process.exit(fail ? 1 : 0);

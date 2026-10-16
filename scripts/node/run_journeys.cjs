@@ -350,6 +350,22 @@ async function clickLink(page, link) {
   };
 }
 
+/** 【F12】运行期缺陷去重键：维度 + 属性 + 页面 + raw 区分字段。
+ *
+ *  旧键只有 dimension|property|(raw.url||raw.backUrl)——7.35/7.36/7.37/7.38 的 raw
+ *  没有 url，于是同维度下**不同的**缺陷被折叠成 1 条（同页两个不同的 JS 错误只报一条）。
+ *  按四类 raw 形状分别取区分字段，有几种拼几种。 */
+function dedupeKey(f) {
+  const r0 = f.raw || {};
+  const disc = [
+    r0.signature,
+    r0.target,
+    r0.kind ? r0.kind + ':' + String(r0.text || '').slice(0, 80) : '',
+    (r0.method && r0.status != null) ? r0.method + ':' + r0.status : '',
+  ].filter(Boolean).join('#');
+  return [f.dimension, f.property || '', r0.url || r0.backUrl || '', disc].join('|');
+}
+
 async function main() {
   if (!URL_) { console.error('ERROR: --url is required'); process.exit(1); }
   fs.mkdirSync(OUT, { recursive: true });
@@ -497,13 +513,7 @@ async function main() {
     const deduped = [];
     const byKey = {};
     for (const f of allFindings) {
-      // 【F12】去重键并入 raw 的**区分字段**：7.35(JS 错误) 的 kind/text、7.37(重复请求) 的
-      // signature、7.38(遮挡) 的 target——这三类 raw 都没有 url，旧键 dimension|property|url
-      // 会把同维度下**不同的**缺陷折叠成 1 条（同页两个不同的 JS 错误只报一条）。
-      const r0 = f.raw || {};
-      const disc = r0.signature || r0.target
-        || (r0.kind ? r0.kind + ':' + String(r0.text || '').slice(0, 80) : '');
-      const key = [f.dimension, f.property || '', r0.url || r0.backUrl || '', disc].join('|');
+      const key = dedupeKey(f);
       if (byKey[key]) { byKey[key].occurrences = (byKey[key].occurrences || 1) + 1; continue; }
       f.occurrences = 1;
       byKey[key] = f;
@@ -533,4 +543,4 @@ if (require.main === module) {
   main().catch(e => { console.error('FATAL', String(e)); process.exit(1); });
 }
 
-module.exports = { parseUrl, resolveUrl, isCandidateLink, planVisits, stepFinding, looksLikeLogin };
+module.exports = { parseUrl, resolveUrl, isCandidateLink, planVisits, stepFinding, looksLikeLogin, dedupeKey };
