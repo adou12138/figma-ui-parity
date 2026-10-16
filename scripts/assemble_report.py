@@ -88,8 +88,13 @@ def collect_style_diffs(path: Path, evidence: dict) -> None:
         if not dim:
             continue
         # 映射到门禁词表：容差内=通过、超容差=失败、不可比=数据不可用
+        # 【F17】pending 必须显式入表：compare_fields 对**低置信配对**（中文名退化子串
+        # 命中）的越界差异降级为 pending 而不是 confirmed。旧表不认 pending → 这些 diff
+        # 在这里被 continue 掉，既不进 fail 也不进 pending——**彻底从报告里消失**，
+        # 等于把「配对可疑、差异待人工确认」静默吞掉，比直接判 confirmed 更难排查。
+        # coverage_gate 的 EXECUTED 已含 pending，入表不会影响覆盖率口径。
         mapped = {"confirmed": "fail", "withinTolerance": "pass",
-                  "notComparable": "dataMissing"}.get(raw)
+                  "notComparable": "dataMissing", "pending": "pending"}.get(raw)
         if mapped is None:
             continue
         evidence.setdefault(dim, []).append({

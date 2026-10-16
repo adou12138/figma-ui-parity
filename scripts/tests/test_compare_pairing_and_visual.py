@@ -139,3 +139,101 @@ class F19ColorFormatTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class F17PendingReachesReportTests(unittest.TestCase):
+    """F17 的降级产物必须能走到报告——否则「降级」等于「静默消失」。"""
+
+    def _run_assemble(self, tmp, diffs):
+        import json
+        import subprocess
+        (tmp / "report.json").write_text(json.dumps({"defects": [], "url": "https://p/"}), encoding="utf-8")
+        (tmp / "styleDiffs.json").write_text(json.dumps({"styleDiffs": diffs}, ensure_ascii=False), encoding="utf-8")
+        r = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / "assemble_report.py"),
+                            "--report", str(tmp / "report.json"),
+                            "--style-diffs", str(tmp / "styleDiffs.json"), "--write"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr[-300:]
+        import json as J
+        return J.loads((tmp / "report.json").read_text(encoding="utf-8"))
+
+    def test_pending_is_kept_and_pending_only_dimension_is_not_pass(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            diffs = [
+                {"dimension": "7.1", "category": "7.1|color", "property": "color",
+                 "expected": "#f00", "actual": "#00f", "delta": 117.3, "status": "pending",
+                 "pairConfidence": "name-substring", "severity": "P1"},
+            ]
+            rep = self._run_assemble(tmp, diffs)
+            entry = ((rep.get("meta") or {}).get("checks") or {}).get("7.1") or {}
+            self.assertEqual(entry.get("status"), "pending",
+                             "全 pending 证据的维度必须聚合成 pending，不得变成 pass（假通过）")
+            self.assertEqual(entry.get("evidence", {}).get("count"), 1)
+
+    def test_confirmed_still_maps_to_fail(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            diffs = [
+                {"dimension": "7.1", "category": "7.1|color", "property": "color",
+                 "expected": "#f00", "actual": "#00f", "delta": 117.3, "status": "confirmed",
+                 "pairConfidence": "text-exact", "severity": "P1"},
+            ]
+            rep = self._run_assemble(tmp, diffs)
+            entry = ((rep.get("meta") or {}).get("checks") or {}).get("7.1") or {}
+            self.assertEqual(entry.get("status"), "fail")
+
+
+class F18BoxCreditStyleOnlyTests(unittest.TestCase):
+    """容器盒配对只比样式层：几何差异不得判缺陷（否则刷 confirmed 假缺陷）。"""
+
+    NODE = {"id": "p1", "name": "btn-frame", "rect": {"x": 10, "y": 10, "w": 60, "h": 40},
+            "fills": [{"type": "SOLID", "color": {"rgb": [0, 0, 255], "alpha": 1.0}}]}
+
+    def test_geometry_not_comparable_but_style_still_compared(self):
+        # 页面包装盒比设计 frame 大很多（真实场景：整行容器）→ 几何必须 notComparable
+        item = {"sel": ".wrap", "rect": {"x": 0, "y": 0, "w": 300, "h": 120},
+                "backgroundColor": "rgb(0,0,0)"}
+        diffs = CF.compare_pair(self.NODE, item, "https://p/", "default", "1440",
+                                pair_confidence="geometry-contained", style_only=True)
+        cats = {d["category"].split("|")[-1]: d for d in diffs}
+        self.assertIn("rect", cats, "几何断言仍应产出（只是不可比）")
+        self.assertEqual(cats["rect"]["status"], "notComparable", cats["rect"])
+        self.assertIn("只比对样式层", cats["rect"]["notComparableReason"] or "")
+        # 颜色（样式层）必须仍可比且超容差 → confirmed
+        color = [d for d in diffs if d["category"].endswith("|color")]
+        self.assertTrue(color and color[0]["status"] == "confirmed",
+                        "样式层差异应仍判 confirmed：%r" % [(d["property"], d["status"]) for d in diffs])
+
+    def test_equal_size_box_is_not_a_wrapper(self):
+        """等大盒不是包装盒：F18 候选必须严格更大，否则拿同级元素当父容器。"""
+        tree = {"id": "p1", "name": "btn-frame", "type": "FRAME",
+                "rect": {"x": 10, "y": 10, "w": 60, "h": 40},
+                "fills": [{"type": "SOLID", "color": {"rgb": [0, 0, 255], "alpha": 1.0}}],
+                "children": [{"id": "t1", "name": "label", "type": "TEXT",
+                              "rect": {"x": 20, "y": 18, "w": 30, "h": 20},
+                              "text": {"characters": "OK", "fontSize": 14}}]}
+        nodes = [tree, tree["children"][0]]
+        page = {"viewport": {"w": 1440}, "items": [
+            {"sel": ".btn", "text": "OK", "rect": {"x": 20, "y": 18, "w": 30, "h": 20}, "fontSize": "14px"},
+            {"sel": ".same", "rect": {"x": 20, "y": 18, "w": 30, "h": 20}},   # 与文本项等大
+        ]}
+        pairs, _, _, indirect = CF.match(nodes, CF.normalize_page(page), {}, CF.build_parent_map(tree))
+        self.assertFalse([p for p in pairs if p.get("pairRole") == "box-credit"],
+                         "等大元素被当成包装盒配对")
+        self.assertEqual([n.get("id") for n in indirect], ["p1"], "配不上应记 pending")
+
+
+class F19DegenerateColorTests(unittest.TestCase):
+    """分量不足的颜色写法必须返回 None，不得返回畸形列表（下游 delta_e 会崩）。"""
+
+    def test_short_component_lists_return_none(self):
+        for value in ("rgb()", "rgb(1)", "rgb(1,2)", "rgb(,)", "hsl()", "hsl(120)"):
+            self.assertIsNone(CF.parse_rgb(value), value)
+
+    def test_full_lists_still_parse(self):
+        self.assertEqual(CF.parse_rgb("rgb(1,2,3)"), [1, 2, 3])
+        self.assertEqual(CF.parse_rgb("hsl(120,50%,50%)"), [64, 191, 64])
+        self.assertEqual(CF.parse_rgb("#abc"), [170, 187, 204])

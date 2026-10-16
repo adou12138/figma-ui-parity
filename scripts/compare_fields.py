@@ -200,6 +200,10 @@ def parse_rgb(value) -> list | None:
             except ValueError:
                 rgb = None
             else:
+                # 分量不足 3 个（rgb() / rgb(1)）不得返回 []/[1]——下游 delta_e 会
+                # 按 3 元素解包，直接 ValueError；且 [] 在 `or` 链里 falsy 会静默跳过。
+                if len(rgb) != 3:
+                    rgb = None
                 if len(parts) >= 4:                      # rgba(..., 0.5) / rgba(... 0.5)
                     try:
                         alpha = _num_or_pct(parts[3], 1.0)
@@ -215,6 +219,8 @@ def parse_rgb(value) -> list | None:
                     alpha = 1.0
             parts = [p for p in re.split(r"[,\s]+", body.strip()) if p]
             try:
+                if len(parts) < 3:
+                    raise ValueError("hsl 分量不足 3 个")
                 h = float(parts[0].rstrip("deg"))
                 s = float(parts[1].rstrip("%")) / 100.0
                 l = float(parts[2].rstrip("%")) / 100.0
@@ -364,7 +370,10 @@ def _unique_containing_box(parent_node, paired_snapshot, parent_of, index, used)
                 continue
             if (cr["x"] <= r["x"] and cr["y"] <= r["y"]
                     and cr["x"] + cr["w"] >= r["x"] + r["w"]
-                    and cr["y"] + cr["h"] >= r["y"] + r["h"]):
+                    and cr["y"] + cr["h"] >= r["y"] + r["h"]
+                    # 必须**严格更大**：等大/更小的不是包装盒而是同级元素，拿它当父容器
+                    # 比对出来的样式差是错对象噪音（等大时更可能是同一个元素被抓了两遍）
+                    and cr["w"] > r["w"] and cr["h"] > r["h"]):
                 candidates.append(cand)
     uniq = list({id(c): c for c in candidates}.values())
     return uniq[0] if len(uniq) == 1 else None
@@ -565,7 +574,12 @@ def _font_weight(value):
 
 
 def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), comparable=True,
-                 incomparable_reason=None, color_skips=None, pair_confidence=None) -> list:
+                 incomparable_reason=None, color_skips=None, pair_confidence=None,
+                 style_only=False) -> list:
+    # style_only：容器盒配对（F18 box-credit）专用——包装盒的几何尺寸随页面结构变化，
+    # 与设计 frame 的 rect 天然不可比，直接比会刷一批 confirmed 假缺陷。只放开样式层。
+    geom_only_reason = ("容器盒配对（box-credit）只比对样式层：包装盒的位置/尺寸随页面结构变化，"
+                       "不据此判缺陷（设计容器自身的几何请用 --mapping 显式配对）")
     diffs = []
     element = {
         "selector": item.get("sel") or item.get("selector"),
@@ -593,6 +607,8 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
         exceeded = delta > tol if tol is not None else True
         # 几何类受视口比例影响；样式类恒可比
         item_comparable = comparable or str(category) in STYLE_ONLY_CATEGORIES
+        if style_only and str(category) not in STYLE_ONLY_CATEGORIES:
+            item_comparable = False
         status = "confirmed" if (exceeded and item_comparable) else ("notComparable" if not item_comparable else "withinTolerance")
         # 【F17】低置信配对（中文名退化子串命中）不得直接判 confirmed——配错对象时
         # 越界的属性差是**错对象之间的差**，报 confirmed 会刷假缺陷。降为 pending
@@ -612,8 +628,8 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
             "delta": round2(delta),
             "tolerance": tol,
             "status": status,
-            "notComparableReason": (incomparable_reason
-                                    if not item_comparable and incomparable_reason else None),
+            "notComparableReason": ((geom_only_reason or incomparable_reason)
+                                    if not item_comparable and (geom_only_reason or incomparable_reason) else None),
             "pairConfidence": pair_confidence,
             "severity": severity,
             "confidence": CONFIDENCE,
@@ -824,7 +840,8 @@ def main() -> int:
         diffs.extend(compare_pair(rec["node"], rec["item"], args.page_url, args.scenario, args.viewport,
                                   offsets=offsets, comparable=comparable, incomparable_reason=incomparable_reason,
                                   color_skips=color_skips,
-                                  pair_confidence=rec.get("pairConfidence")))
+                                  pair_confidence=rec.get("pairConfidence"),
+                                  style_only=(rec.get("pairRole") == "box-credit")))
     real = [d for d in diffs if d["status"] == "confirmed"]
 
     result = {
