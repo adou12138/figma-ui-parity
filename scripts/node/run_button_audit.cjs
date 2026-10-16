@@ -202,8 +202,14 @@ function pairButtonsWithEvidence(design, pageBtns, fullTextElements) {
       missing.push({ ...d, matchedBy: 'none' });
     }
   }
+  // 【F44b】icon-only（无文本）按钮不再被排除：`b.normText || b.text` 把图标按钮
+  // 全滤掉——设计稿若只有图标（常见：关闭 ×、更多 …、设置齿轮），多余的图标按钮
+  // 是 7.23「页面有设计无」的真命中，漏报即漏判。图标按钮单独入 extraIconOnly，
+  // 消费方按文本匹配规则人工核对（图标无语义文本，机械配对不可靠）。
   const extra = pageBtns.filter(b => !used.has(b.sel) && (b.normText || b.text));
-  return { paired, missingInPage: missing, designUnmatchedWeak: unmatchedWeak, extraInPage: extra };
+  const extraIconOnly = pageBtns.filter(b => !used.has(b.sel) && !(b.normText || b.text));
+  return { paired, missingInPage: missing, designUnmatchedWeak: unmatchedWeak,
+           extraInPage: extra, extraInPageIconOnly: extraIconOnly };
 }
 
 function pairButtons(design, pageBtns) {
@@ -217,9 +223,21 @@ if (require.main === module) (async () => {
   if (!fs.existsSync(AUDIT_JS)) { console.error('ERROR: missing scripts/button_audit.js'); process.exit(1); }
 
   const launchOpts = { headless: !HEADED, executablePath: chromePath, args: ['--no-sandbox'] };
+  // 【F45】视口参数化 + deviceScaleFactor：硬编码 1903x985 在与设计帧不一致的
+  // 宽度下做 hitTest/遮挡判定会假失败/假通过；缺省 scale factor 会让 bbox 与
+  // 设计坐标相差一个 DPR。--viewport WxH 与设计帧对齐（默认保持旧行为不破坏
+  // 既有产物），--dsf 显式指定。
+  const vpArg = arg('viewport', '');
+  const dsf = parseFloat(arg('dsf', '1')) || 1;
+  const vpMatch = /^(\d+)x(\d+)$/.exec(vpArg || '');
+  const VIEWPORT = vpMatch
+    ? { width: parseInt(vpMatch[1], 10), height: parseInt(vpMatch[2], 10) }
+    : { width: 1903, height: 985 };
   let context, browser = null;
-  if (PROFILE) context = await pw.chromium.launchPersistentContext(PROFILE, { ...launchOpts, viewport: { width: 1903, height: 985 } });
-  else { browser = await pw.chromium.launch(launchOpts); context = await browser.newContext({ viewport: { width: 1903, height: 985 } }); }
+  if (PROFILE) context = await pw.chromium.launchPersistentContext(PROFILE, { ...launchOpts, viewport: VIEWPORT, deviceScaleFactor: dsf });
+  else { browser = await pw.chromium.launch(launchOpts); context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: dsf }); }
+  console.log('[i] viewport=' + VIEWPORT.width + 'x' + VIEWPORT.height + ' dsf=' + dsf
+    + (vpMatch ? '' : '（默认值；与设计帧宽不一致时请加 --viewport WxH 对齐，F45）'));
   const page = context.pages()[0] || await context.newPage();
   if (auth) { try { console.log('[i] restoreAuth:', JSON.stringify(await auth.restoreAuth(context))); } catch (e) {} }
   if (HEADED) {
@@ -293,10 +311,23 @@ if (require.main === module) (async () => {
       console.error('[x] safety-policy=all 需要 --test-environment-confirmed；拒绝执行 danger 操作');
       process.exitCode = 2;
     }
-    const queue = pool.filter(b => ((canRunDanger) || b.risk !== 'danger') && (b.clickable.ok || isBlockedOnly(b))).slice(0, MAX_CLICK);
+    const clickablePool = pool.filter(b => ((canRunDanger) || b.risk !== 'danger') && (b.clickable.ok || isBlockedOnly(b)));
+    // 【F44a】超出 MAX_CLICK 的部分必须记 skipped——「既不点也不记」= 那批按钮的
+    // 交互验证静默蒸发，报告却显示「审计完成」。
+    const queue = clickablePool.slice(0, MAX_CLICK);
+    const overBudget = clickablePool.slice(MAX_CLICK);
+    overBudget.forEach(b => results.push({
+      sel: b.sel, text: b.text, risk: b.risk, skipped: true,
+      reason: '点击预算超限：pool ' + clickablePool.length + ' 超 MAX_CLICK ' + MAX_CLICK + '，未执行交互验证',
+    }));
     const skippedDanger = pool.filter(b => !canRunDanger && b.risk === 'danger');
     skippedDanger.forEach(b => results.push({ sel: b.sel, text: b.text, risk: b.risk, skipped: true, reason: 'danger 级未点击：未取得 all + testEnvironmentConfirmed 授权' }));
-    console.log('[i] 待点击 ' + queue.length + ' 个（跳过 danger ' + skippedDanger.length + ' 个）');
+    if (overBudget.length) {
+      console.warn('[warn] 点击预算超限：' + overBudget.length + ' 个按钮未交互验证（已记 skipped，'
+        + '可用 --max 提高预算）');
+    }
+    console.log('[i] 待点击 ' + queue.length + ' 个（跳过 danger ' + skippedDanger.length
+      + ' 个、预算外 ' + overBudget.length + ' 个）');
 
     for (const b of queue) {
       const rec = { sel: b.sel, text: b.text, normText: b.normText, risk: b.risk, iconOnly: b.iconOnly, clickable: b.clickable, hit: b.hit };
@@ -415,7 +446,7 @@ if (require.main === module) (async () => {
     count: audit.count, uniqueCount: audit.uniqueCount, hiddenCount: audit.hiddenCount,
     riskSummary: audit.riskSummary, notClickableCount: audit.notClickableCount,
     hidden: audit.hidden,
-    skippedContainers: audit.skippedContainers,
+    containers: audit.containers,   // 【F44c】button_audit.js 的真实键名是 containers——旧读 skippedContainers 恒 undefined
     static: audit.buttons,
     genericClickables: audit.genericClickables || [],
     clicked: results.filter(r => r.clicked).length,

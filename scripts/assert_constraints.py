@@ -31,7 +31,12 @@ PROPORTION_TOLERANCE = 0.02
 
 
 def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tuple:
-    """Return (ok, expected, actual) for one axis."""
+    """Return (ok, expected, actual) for one axis。
+
+    【F46c】缺坐标不再静默 return True——那把「没测」伪装成「通过」。
+    返回 None 让调用方计入 skippedNodes（可审计），与本文件 fallback 注释的
+    「宁可跳过并记录」纪律一致。
+    """
     if axis == "h":
         a, b, length = rect.get("x"), frame_w, rect.get("w")
         base_a, base_len = base_rect.get("x"), base_rect.get("w")
@@ -41,7 +46,7 @@ def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tup
         base_a, base_len = base_rect.get("y"), base_rect.get("h")
         base_frame_size = base_frame.get("h")
     if None in (a, b, length, base_a, base_len, base_frame_size) or not b:
-        return True, None, None
+        return None, None, None
     if rule in ("LEFT", "TOP"):
         return abs(a - base_a) <= POSITION_TOLERANCE, base_a, a
     if rule in ("RIGHT", "BOTTOM"):
@@ -52,7 +57,10 @@ def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tup
         return abs(now - before) <= POSITION_TOLERANCE, round(before, 2), round(now, 2)
     if rule == "SCALE":
         now, before = length / b, base_len / base_frame_size
-        return abs(now - before) <= PROPORTION_TOLERANCE, round(before, 4), round(now, 4)
+        # 【F46b】相对容差：绝对比例差 0.02 对小元素是漏测（base 比例 0.05 时
+        # 50→68px 涨 36% 仍判 ok）。改为相对变化率 |now-before|/before。
+        rel = abs(now - before) / before if before else 0.0
+        return rel <= PROPORTION_TOLERANCE, round(before, 4), round(now, 4)
     if rule == "FIXED":
         return abs(length - base_len) <= POSITION_TOLERANCE, base_len, length
     return True, None, None
@@ -64,15 +72,27 @@ def main() -> int:
     ap.add_argument("--measurements", required=True, type=Path)
     ap.add_argument("--output", required=True, type=Path)
     ap.add_argument("--enforce", action="store_true")
+    ap.add_argument("--base", default=None,
+                    help="显式指定基准视口宽（数值）。缺省时用 measurements.base，"
+                         "再缺用设计帧宽，都没有时按**数值**排序取最大（旧版字符串字典序"
+                         "会把 '768' 排在 '1280' 前，基准拿错）。仍找不到时记 dataMissing")
     args = ap.parse_args()
 
     design = json.loads(args.design.read_text(encoding="utf-8"))
     data = json.loads(args.measurements.read_text(encoding="utf-8"))
     nodes = {str(n.get("id")): n for n in (design.get("flat") or []) if n.get("constraints")}
-    base_key = str(data.get("base") or (design.get("frame") or {}).get("w") or "")
+    base_key = str(args.base or data.get("base") or (design.get("frame") or {}).get("w") or "")
     viewports = data.get("viewports") or {}
+    base_missing_reason = None
     if base_key not in viewports and viewports:
-        base_key = sorted(viewports)[0]
+        # 【F46a】数值排序取最大（桌面帧是最常见基准），不再是字符串字典序
+        try:
+            base_key = str(max(int(v) for v in viewports if str(v).isdigit()))
+        except ValueError:
+            base_key = ""
+    if base_key not in viewports or not viewports:
+        base_missing_reason = "无可用基准视口（--base 未指定且 measurements.base/设计帧宽缺失），约束断言整体未执行"
+        print("[assert_constraints] " + base_missing_reason, file=sys.stderr)
     base = viewports.get(base_key) or {}
     base_items = base.get("items") or {}
     base_frame = {"w": base.get("frameWidth") or (design.get("frame") or {}).get("w") or 0,
@@ -108,6 +128,12 @@ def main() -> int:
                     continue
                 checked += 1
                 ok, expected, actual = check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis)
+                if ok is None:
+                    # 【F46c】缺坐标计入 skipped（可审计），不再静默吞
+                    skipped_nodes.append({"viewport": str(viewport), "nodeId": str(node_id),
+                                          "reason": "坐标不完整（x/y/w/h 或帧宽缺失），约束断言未执行"})
+                    checked -= 1
+                    continue
                 if not ok:
                     raw_delta = abs((actual or 0) - (expected or 0))
                     violations.append({
@@ -129,12 +155,16 @@ def main() -> int:
 
     result = {"base": base_key, "viewports": [v for v in viewports if str(v) != str(base_key)],
               "checkedAssertions": checked, "violations": violations,
+              "dataMissing": ({"reason": base_missing_reason} if base_missing_reason else None),
               "skippedViewports": skipped_viewports, "skippedNodes": skipped_nodes,
               "summary": {"checked": checked, "violated": len(violations),
                           "skippedViewports": len(skipped_viewports), "skippedNodes": len(skipped_nodes)}}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(result["summary"], ensure_ascii=False, indent=2))
+    if args.enforce and base_missing_reason:
+        print("constraints 断言未执行（基准缺失）：" + base_missing_reason, file=sys.stderr)
+        return 2
     if args.enforce and violations:
         print("constraints 断言未通过：{} 条违反，详见 {}".format(len(violations), args.output), file=sys.stderr)
         return 1

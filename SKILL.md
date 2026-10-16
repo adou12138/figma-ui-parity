@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.28.0
+version: 4.29.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -161,7 +161,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 状态类场景（暗色模式 7.25、打印视图 7.26、状态残留 7.32、接口异常 7.33）由 `scripts/node/run_state_scenarios.cjs` 驱动执行：先用 `page.emulateMedia` 切换渲染模式或 `page.route` 拦载 XHR/fetch fulfill 500（请求不到服务端、零真实写），再用 `scripts/state_probes.js` 在切换后的状态里重新探测。产物为每个维度给出 `pass/fail/pending/notRun` 状态与 findings；`staticOnly` 策略下不做页面交互，相应维度填 `notRun` 并写明原因。判定口径（哪些记 confirmed、哪些记 pending）见 `references/bug-driven-checks.md` 对应维度节。
 
-跨页用户旅程（7.39）由 `scripts/node/run_journeys.cjs` 驱动：从起始页实时提取同源候选链接（危险词、跨源、锚点、下载类、新标签页均被剔除，`isCandidateLink` 会给出跳过原因），BFS 有界点击走查，每步采集运行期观测并判定落地页缺陷（404/500、落地空白、链接无反应、返回中断、中途弹登录），判据与安全边界见 `references/journeys.md`。**已知留痕缺口：被剔除的链接是裸 `continue` 丢弃（`run_journeys.cjs:226-228`，`planVisits:131` 同），跳过原因没有落到产物里——报告体现不出"哪些链接因何未访问"。**
+跨页用户旅程（7.39）由 `scripts/node/run_journeys.cjs` 驱动：从起始页实时提取同源候选链接（危险词、跨源、锚点、下载类、新标签页均被剔除，`isCandidateLink` 会给出跳过原因），BFS 有界点击走查，每步采集运行期观测并判定落地页缺陷（404/500、落地空白、链接无反应、返回中断、中途弹登录），判据与安全边界见 `references/journeys.md`。被剔除的链接按原因汇总进产物（`skippedLinks` 段，含跳过原因计数与样例）；每步点击后 1200ms 有界等待 + 稳定化，不在异常页面挂死。
 
 维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
 

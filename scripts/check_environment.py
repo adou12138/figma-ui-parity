@@ -1,27 +1,51 @@
 #!/usr/bin/env python3
-"""Read-only dependency check for figma-ui-parity v4.28.0."""
+"""Read-only dependency check for figma-ui-parity v4.29.0."""
 from __future__ import annotations
 import json, os, shutil, subprocess, sys
 from pathlib import Path
 
-VERSION = "4.28.0"
+VERSION = "4.29.0"
 checks = []
 def add(id, status, detail): checks.append({"id": id, "status": status, "detail": detail})
 
 def browser_candidates():
+    """浏览器候选按当前 OS 给路径（【F42】旧版全 Windows 路径，mac/linux 恒 needs_setup，
+    与 SKILL.md 声明的跨平台支持矛盾）。"""
     candidates = []
     if os.environ.get("PLAYWRIGHT_CHROME_PATH"):
         candidates.append(Path(os.environ["PLAYWRIGHT_CHROME_PATH"]))
     home = Path.home()
-    base = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", home / "AppData/Local/ms-playwright"))
+    base = Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH",
+                               home / ("AppData/Local/ms-playwright" if sys.platform == "win32"
+                                       else "Library/Caches/ms-playwright" if sys.platform == "darwin"
+                                       else ".cache/ms-playwright")))
     if base.exists():
-        candidates.extend(sorted(base.glob("chromium-*/chrome-win64/chrome.exe"), reverse=True))
-    candidates.extend(Path(p) for p in (
-        r"C:/Program Files/Google/Chrome/Application/chrome.exe",
-        r"C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-        r"C:/Program Files/Microsoft/Edge/Application/msedge.exe",
-        r"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
-    ))
+        if sys.platform == "win32":
+            candidates.extend(sorted(base.glob("chromium-*/chrome-win64/chrome.exe"), reverse=True))
+            candidates.extend(sorted(base.glob("chromium-*/chrome-win/chrome.exe"), reverse=True))
+        elif sys.platform == "darwin":
+            candidates.extend(sorted(base.glob("chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium"), reverse=True))
+        else:
+            candidates.extend(sorted(base.glob("chromium-*/chrome-linux/chrome"), reverse=True))
+    if sys.platform == "win32":
+        candidates.extend(Path(p) for p in (
+            r"C:/Program Files/Google/Chrome/Application/chrome.exe",
+            r"C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+            r"C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+            r"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+        ))
+    elif sys.platform == "darwin":
+        candidates.extend(Path(p) for p in (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ))
+    else:
+        candidates.extend(Path(p) for p in (
+            "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium", "/usr/bin/chromium-browser",
+            "/usr/bin/microsoft-edge",
+        ))
     return [p for p in candidates if p.exists()]
 
 add("python-runtime", "ready" if sys.version_info >= (3, 10) else "unavailable", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
@@ -33,8 +57,12 @@ if node:
     local_pw = Path(__file__).resolve().parents[3] / "cdp_driver" / "node_modules" / "playwright-core"
     if local_pw.exists():
         probe_code = f"require({json.dumps(str(local_pw))})"
-    probe = subprocess.run([node, "-e", probe_code], capture_output=True, text=True)
-    playwright_ok = probe.returncode == 0
+    # 【F42】subprocess 必须带 timeout：node -e 卡死时门禁挂死整条流水线
+    try:
+        probe = subprocess.run([node, "-e", probe_code], capture_output=True, text=True, timeout=20)
+        playwright_ok = probe.returncode == 0
+    except subprocess.TimeoutExpired:
+        playwright_ok = False
 add("playwright-core", "ready" if playwright_ok else "needs_setup", "loadable" if playwright_ok else "not-found")
 browsers = browser_candidates()
 add("headed-browser", "ready" if browsers else "needs_setup", str(browsers[0]) if browsers else "not-found")
