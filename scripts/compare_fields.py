@@ -15,7 +15,7 @@ checklist layer, and validate_defects accepts them as-is.
 Offline only.
 """
 from __future__ import annotations
-import argparse, json, sys
+import argparse, json, re, sys
 from pathlib import Path
 
 # 属性级容差表：只有超出容差才成为差异，避免把渲染舍入误差报成缺陷。
@@ -32,6 +32,7 @@ TOLERANCE = {
     "shadow_offset_px": 1.0,
     "color_delta_e": 3.0,
     "opacity": 0.02,
+    "font_weight": 0.0,
 }
 
 DIMENSION = {
@@ -319,6 +320,77 @@ def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None
     return pairs, unmatched, unmatched_page, matched_indirect
 
 
+def _first_px(text):
+    """从 CSS 值里取第一个 px 数值（'4px' → 4.0）；取不到返回 None。"""
+    if text is None:
+        return None
+    m = re.search(r"(-?\d+(?:\.\d+)?)px", str(text))
+    return float(m.group(1)) if m else None
+
+
+def _num(value):
+    """宽松数值解析：数值直通、字符串转 float，失败返回 None。"""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _design_radius(node):
+    """设计侧圆角：radius{uniform} 或 radius{corners[]}（四角取 max）。"""
+    r = node.get("radius")
+    if not isinstance(r, dict):
+        return None
+    if isinstance(r.get("uniform"), (int, float)):
+        return float(r["uniform"])
+    corners = r.get("corners")
+    if isinstance(corners, list):
+        nums = [c for c in corners if isinstance(c, (int, float))]
+        return float(max(nums)) if nums else None
+    return None
+
+
+def _page_radius(item):
+    """页面侧圆角：borderRadius，或四个分角取 max。"""
+    v = _first_px(item.get("borderRadius"))
+    if v is not None:
+        return v
+    corners = [_first_px(item.get(k)) for k in
+               ("borderTopLeftRadius", "borderTopRightRadius",
+                "borderBottomLeftRadius", "borderBottomRightRadius")]
+    nums = [c for c in corners if c is not None]
+    return float(max(nums)) if nums else None
+
+
+def _shadow_blur_offset(text):
+    """CSS boxShadow → (blur, offset 长度)。多阴影取第一个，解析不到返回 None。"""
+    if not text or str(text).strip().lower() in ("none", ""):
+        return None
+    m = re.search(r"(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px", str(text))
+    if not m:
+        return None
+    ox, oy, blur = float(m.group(1)), float(m.group(2)), float(m.group(3))
+    return blur, (ox * ox + oy * oy) ** 0.5
+
+
+def _font_weight(value):
+    """fontWeight 归一为数值：'bold'→700、'normal'→400。"""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    s = str(value).strip().lower()
+    if s == "bold":
+        return 700.0
+    if s in ("normal", "lighter", ""):
+        return 400.0
+    return _num(s)
+
+
 def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), comparable=True,
                  incomparable_reason=None, color_skips=None) -> list:
     diffs = []
@@ -408,6 +480,47 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     ):
         if isinstance(design_val, (int, float)) and isinstance(page_val, (int, float)) and (design_val or page_val):
             emit("font" if prop == "fontSize" else prop.lower(), prop, round2(design_val), round2(page_val), abs(design_val - page_val), tol_key)
+
+    # —— 盒模型 / 阴影 / 透明度补充断言 ——
+    # TOLERANCE 与 DIMENSION 早就声明了 radius_px / border_px / shadow_* / opacity，
+    # 但此前没有任何发射路径 → 圆角 4→2px、边框粗细变化这类历史高发缺陷只能靠像素 diff
+    # 碰运气。这里按同一 emit() 模式补上。
+    # **纪律**：只在设计侧与页面侧**都取到值**时才比对；设计侧没画那层样式就不 emit，
+    # 不得把「设计稿没定义」判成缺陷。
+    d_radius, p_radius = _design_radius(node), _page_radius(item)
+    if d_radius is not None and p_radius is not None:
+        emit("radius", "borderRadius", round2(d_radius), round2(p_radius),
+             abs(d_radius - p_radius), "radius_px")
+
+    d_weight = (node.get("text") or {}).get("fontWeight")
+    p_weight = _font_weight(item.get("fontWeight"))
+    if d_weight is not None and p_weight is not None:
+        emit("font", "fontWeight", round2(d_weight), round2(p_weight),
+             abs(d_weight - p_weight), "font_weight")
+
+    d_strokes = node.get("strokes")
+    p_border = _first_px(item.get("border"))
+    if isinstance(d_strokes, list) and d_strokes and p_border is not None:
+        s0 = d_strokes[0] if isinstance(d_strokes[0], dict) else {}
+        d_bw = _num(s0.get("strokeWeight", s0.get("weight")))
+        if d_bw is not None:
+            emit("border", "borderWidth", round2(d_bw), round2(p_border),
+                 abs(d_bw - p_border), "border_px")
+
+    d_effects = node.get("effects")
+    p_shadow = _shadow_blur_offset(item.get("boxShadow"))
+    if isinstance(d_effects, list) and d_effects and p_shadow is not None:
+        e0 = d_effects[0] if isinstance(d_effects[0], dict) else {}
+        d_blur = _num(e0.get("radius"))
+        if d_blur is not None:
+            emit("shadow", "boxShadowBlur", round2(d_blur), round2(p_shadow[0]),
+                 abs(d_blur - p_shadow[0]), "shadow_blur_px")
+
+    d_op = _num(node.get("opacity"))
+    p_op = _num(item.get("opacity"))
+    if d_op is not None and p_op is not None:
+        emit("opacity", "opacity", round2(d_op), round2(p_op),
+             abs(d_op - p_op), "opacity")
 
     if d_text.get("characters") and (p_text.get("text") or "").strip():
         if d_text["characters"].strip() != (p_text.get("text") or "").strip():
