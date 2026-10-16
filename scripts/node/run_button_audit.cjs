@@ -154,9 +154,28 @@ function normKey(s) { return String(s == null ? '' : s).replace(/[\u200b-\u200f\
 function pairButtonsWithEvidence(design, pageBtns, fullTextElements) {
   const used = new Set(), paired = [], missing = [], unmatchedWeak = [];
   const textEvidence = Array.isArray(fullTextElements) ? fullTextElements : [];
+  // 【F29 反漏判】旧 matches 是双向子串：设计按钮「确定」只要在帮助文字/表头出现过
+  // 就判 paired(matchedBy:fullText)，真缺失被吞。收紧规则：
+  //   - 等值命中仍算证据；子串只认「设计文本较长（>=3 字符）且页面文本以其为完整
+  //     class/词段」——即命中段边界是标点/空白/标签边界，不认任意位置子串；
+  //   - 且命中元素必须可交互（interactive=true）——纯文字节点不算按钮存在的证据。
+  const WORD_BOUNDARY = /(^|[\s·、，,。;；:：/|()（）\[\]\-_])([^[\s·、，,。;；:：/|()（）\[\]\-_]+)$/; 
   const matches = (v, k) => {
     const n = normKey(v);
-    return n && (n === k || n.indexOf(k) >= 0 || k.indexOf(n) >= 0);
+    if (!n || !k) return false;
+    if (n === k) return true;
+    // 单向且带边界：页面文本必须包含完整的设计文本段（不认反向子串——
+    // 页面长文本包含短设计词是文案巧合，不是按钮实现）
+    if (k.length < 3) return false;                     // 短设计名（btn/a/icon）禁子串
+    let idx = n.indexOf(k);
+    while (idx >= 0) {
+      const before = idx === 0 ? '' : n[idx - 1];
+      const after = idx + k.length >= n.length ? '' : n[idx + k.length];
+      const isBoundary = (ch) => ch === '' || /[\s·、，,。;；:：/|()（）\[\]\-_]/.test(ch);
+      if (isBoundary(before) && isBoundary(after)) return true;
+      idx = n.indexOf(k, idx + 1);
+    }
+    return false;
   };
   for (const d of design) {
     const k = normKey(d.text) || normKey(d.name);
@@ -170,7 +189,11 @@ function pairButtonsWithEvidence(design, pageBtns, fullTextElements) {
       paired.push({ design: d, page: { sel: hit.sel, text: hit.text, risk: hit.risk, clickable: hit.clickable }, matchedBy: 'buttonInventory', nonStandardEntry: false });
       continue;
     }
-    const textHit = k && textEvidence.find(e => matches(e.text || e.characters || e.value, k));
+    // fullText 通道：命中必须可交互；并降级为 pending 语义（matchedBy 保留但
+    // nonStandardEntry=true 已有——消费方对 fullText 配对本来就要求人工确认）。
+    const textHit = k && textEvidence.find(e =>
+      matches(e.text || e.characters || e.value, k) && (e.interactive === true || e.clickable === true
+        || /^(a|button)$/i.test(String(e.tag || ''))));
     if (textHit) {
       paired.push({ design: d, page: { sel: textHit.selector || textHit.sel || null, text: textHit.text || textHit.characters || textHit.value, tag: textHit.tag || null }, matchedBy: 'fullText', nonStandardEntry: true });
     } else if (d.confidence === 'weak') {

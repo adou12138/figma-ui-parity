@@ -183,6 +183,12 @@ def compute(plan: dict, results: list, exempt_dimensions) -> dict:
 
     rate = round(executed / counted, 4) if counted else 0.0
     trunc = plan.get("truncation") if isinstance(plan, dict) else None
+    dropped = (trunc or {}).get("dropped", 0) if isinstance(trunc, dict) else 0
+    # 【F26 反虚高】截断丢弃的场景此前单列但不进分母——生成 300 截到 30 后执行率
+    # 仍可按 30 算到 100%，绝大多数意图场景被静默丢掉。rate 按原口径呈现，
+    # 但新增保守口径 rateIncludingTruncated（分母 = counted + dropped），
+    # 截断虚高从此有数可查。
+    rate_with_trunc = round(executed / (counted + dropped), 4) if (counted + dropped) else 0.0
     return {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "planned": {
@@ -191,11 +197,12 @@ def compute(plan: dict, results: list, exempt_dimensions) -> dict:
             "exemptDimensions": sorted(exempt),
             "byDimension": _count_by(items, "dimension"),
             "bySafety": _count_by(items, "safety"),
-            "truncated": (trunc or {}).get("dropped", 0) if isinstance(trunc, dict) else 0,
+            "truncated": dropped,
         },
         "executed": {
             "total": executed,
             "rate": rate,
+            "rateIncludingTruncated": rate_with_trunc,
             "byDimension": dict(sorted(exec_by_dim.items())),
             "bySafety": dict(sorted(exec_by_safety.items())),
         },
@@ -212,6 +219,8 @@ def compute(plan: dict, results: list, exempt_dimensions) -> dict:
         },
         "unknownResults": unknown,
         "note": "场景执行率＝已执行 /（计划总数 − 显式豁免维度）。"
+                "rateIncludingTruncated 把截断丢弃的场景计入分母（保守口径，F26）："
+                "两者差距大说明大量意图场景被截断静默丢弃，覆盖率是虚的。"
                 "维度被跑过一次即视为该维度已覆盖——**逐条场景是否真的跑了，只能看这里**。"
                 "未执行项必须写明原因；豁免维度从分母剔除但在本段单列，不静默。",
     }

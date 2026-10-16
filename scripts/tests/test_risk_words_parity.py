@@ -50,6 +50,19 @@ class RiskWordsParityTests(unittest.TestCase):
         for name in ("DANGER_WORDS", "CAUTION_WORDS"):
             self.assertTrue(getattr(discover_scenarios, name), "%s 不能为空" % name)
 
+    def test_button_audit_regex_covers_all_danger_words(self):
+        """【F30】button_audit.js 的 RE_DANGER 必须覆盖 risk_words.cjs 全部词条。
+
+        该正则是交互审计（真实点击前）的风险判定依据——纯中文版本曾让英文
+        Delete/Remove 按钮落 safe 被真点（安全问题）。三表漂移在此被测试抓住。"""
+        src = (SCRIPTS / "button_audit.js").read_text(encoding="utf-8")
+        m = re.search(r"const\s+RE_DANGER\s*=\s*/(.*?)/i;", src, re.S)
+        assert m, "button_audit.js 里找不到 RE_DANGER"
+        regex_body = m.group(1)
+        missing = [w for w in _js_array("DANGER_WORDS") if w not in regex_body]
+        self.assertEqual(missing, [],
+                         "button_audit.js RE_DANGER 缺少词条 %s（与 risk_words.cjs 漂移）" % missing)
+
 
 if __name__ == "__main__":
     unittest.main()

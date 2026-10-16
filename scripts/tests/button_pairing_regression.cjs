@@ -18,11 +18,30 @@ test('inventory wins when leaf text omits bottom button', () => {
 });
 
 test('full text matches non-standard visible entry', () => {
-  const r = pairButtonsWithEvidence([design('确定')], [], [{ text: ' 确定 ', tag: 'li', selector: '.entry' }]);
+  // 【F29 反转】fullText 通道收紧：命中元素必须可交互（a/button 标签或
+  // interactive/clickable 标记），li/div 纯文字不再是按钮存在的证据。
+  const r = pairButtonsWithEvidence([design('确定')], [],
+    [{ text: ' 确定 ', tag: 'li', selector: '.entry', interactive: true }]);
   assert.strictEqual(r.paired.length, 1);
   assert.strictEqual(r.paired[0].matchedBy, 'fullText');
   assert.strictEqual(r.paired[0].nonStandardEntry, true);
   assert.strictEqual(r.missingInPage.length, 0);
+});
+
+test('fullText non-interactive text is NOT evidence (F29)', () => {
+  // 帮助文字/表头里出现过「确定」不再判配对——真缺失必须进 missing。
+  const r = pairButtonsWithEvidence([design('确定')], [],
+    [{ text: '确定订单后在下一步填写地址', tag: 'li', selector: '.help-text' }]);
+  assert.strictEqual(r.paired.length, 0, '纯文字节点不得充当按钮证据');
+  assert.strictEqual(r.missingInPage.length, 1);
+});
+
+test('fullText short design name rejects substring coincidence (F29)', () => {
+  // 短设计名（btn/a）禁子串：页面任意长文本包含它不算命中。
+  const r = pairButtonsWithEvidence([design('确定')], [],
+    [{ text: '我们提供确定性的交付承诺', tag: 'div', selector: '.doc', interactive: true }]);
+  assert.strictEqual(r.missingInPage.length === 1 || r.paired.length === 0,
+    true, '跨词巧合子串不得配对');
 });
 
 test('zero-width and whitespace normalize', () => {

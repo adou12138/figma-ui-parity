@@ -57,6 +57,22 @@ def module_name(el):
     return str(el) if el else ""
 
 
+def _grade(sev) -> str:
+    """severity 归一到 高/中/低：P0/P1→高、P2→中、P3/其余→低；high/medium/low 直译。
+
+    【F37】compare_fields 产 P0-P3（7.8 文案缺陷 severity=P1），旧映射只认
+    high/medium/low——列表形缺陷行的「等级」整列原样落入 P0/P1，LEVEL_FILL
+    判色失效、Excel 全部无底色，一眼分不出轻重。"""
+    s = str(sev if sev is not None else "").strip().lower()
+    if s in ("p0", "p1", "high"):
+        return "高"
+    if s in ("p2", "medium", "mid"):
+        return "中"
+    if s in ("p3", "low"):
+        return "低"
+    return str(sev or "中")
+
+
 def rows_from_report(report: dict):
     """从 report.json 提取缺陷行。
 
@@ -76,7 +92,7 @@ def rows_from_report(report: dict):
                     continue
                 sev = str(d.get("severity", "")).lower()
                 rows.append({
-                    "等级": {"high": "高", "medium": "中", "low": "低"}.get(sev, d.get("severity", "中")),
+                    "等级": _grade(sev or d.get("severity")),
                     "缺陷类型": d.get("category", d.get("type", "视觉样式")),
                     "功能模块": module_name(d.get("element")),
                     "问题描述": d.get("issue", d.get("symptom", d.get("detail", ""))),
@@ -101,7 +117,7 @@ def rows_from_report(report: dict):
     for vp in report.get("responsive", {}).get("perViewport", []):
         for iss in vp.get("issues", []):
             rows.append({
-                "等级": {"high": "高", "medium": "中", "low": "低"}.get(iss.get("severity", "medium"), "中"),
+                "等级": _grade(iss.get("severity", "medium")),
                 "缺陷类型": "响应式缺陷",
                 "功能模块": module_name(iss.get("element")),
                 "问题描述": f"[视口{vp.get('viewport')}px] {iss.get('detail', '')}",

@@ -341,16 +341,23 @@ def _num(value):
 
 
 def _design_radius(node):
-    """设计侧圆角：radius{uniform} 或 radius{corners[]}（四角取 max）。"""
+    """设计侧圆角：corners（独立四角）优先取 max，再回落 uniform。
+
+    【F15 反死代码】旧判定顺序 uniform 在前——extract_design_fields 的 uniform
+    恒存在（缺省 0.0），corners 分支是死代码：设计用独立四角圆角（卡片/半屏弹层
+    极常见）时设计侧恒 0、页面侧取 8 → confirmed 圆角假缺陷且淹没真缺陷。
+    （extract_design_fields 现已改为直接产出生效圆角标量，本函数对旧格式产物
+    兼容：corners 优先，uniform 真为数值且无 corners 才用。）"""
     r = node.get("radius")
     if not isinstance(r, dict):
         return None
-    if isinstance(r.get("uniform"), (int, float)):
-        return float(r["uniform"])
     corners = r.get("corners")
     if isinstance(corners, list):
         nums = [c for c in corners if isinstance(c, (int, float))]
-        return float(max(nums)) if nums else None
+        if nums:
+            return float(max(nums))
+    if isinstance(r.get("uniform"), (int, float)):
+        return float(r["uniform"])
     return None
 
 
@@ -404,10 +411,19 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     anchor = element.get("anchor") or element.get("selector") or node.get("name")
     pair_rect = item.get("rect") or item.get("bbox") or {}
 
+    # 【F14】视口/帧宽不一致只让**几何类**比对不可比（位置/尺寸/间距随缩放整体漂移，
+    # 比对无意义）；颜色/文案/字号/字重等**样式类**不受视口宽度影响——
+    # 旧版 comparable 是全局开关，移动端 375 对 1440 帧时连「文案写错」「主色错成蓝」
+    # 都报 notComparable，整页假通过。拆成两个口径：
+    STYLE_ONLY_CATEGORIES = {"color", "characters", "font", "radius", "border",
+                             "shadow", "opacity"}
+
     def emit(category, prop, expected, actual, delta, tolerance_key, dimension=None) -> None:
         tol = TOLERANCE.get(tolerance_key)
         exceeded = delta > tol if tol is not None else True
-        status = "confirmed" if (exceeded and comparable) else ("notComparable" if not comparable else "withinTolerance")
+        # 几何类受视口比例影响；样式类恒可比
+        item_comparable = comparable or str(category) in STYLE_ONLY_CATEGORIES
+        status = "confirmed" if (exceeded and item_comparable) else ("notComparable" if not item_comparable else "withinTolerance")
         severity = SEVERITY.get(category, SEVERITY_DEFAULT)
         diffs.append({
             "page": page_url,
@@ -421,7 +437,8 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
             "delta": round2(delta),
             "tolerance": tol,
             "status": status,
-            "notComparableReason": incomparable_reason if not comparable else None,
+            "notComparableReason": (incomparable_reason
+                                    if not item_comparable and incomparable_reason else None),
             "severity": severity,
             "confidence": CONFIDENCE,
             "reproduction": [
@@ -524,13 +541,14 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
 
     if d_text.get("characters") and (p_text.get("text") or "").strip():
         if d_text["characters"].strip() != (p_text.get("text") or "").strip():
+            # 【F14】文案比对不受视口宽度影响——恒可比
             diffs.append({
                 "page": page_url, "scenario": scenario, "viewport": viewport,
                 "category": "7.8|text", "dimension": "7.8", "property": "characters",
                 "expected": fmt_val(d_text["characters"]), "actual": fmt_val(p_text.get("text")),
                 "delta": None, "tolerance": None,
-                "status": "confirmed" if comparable else "notComparable",
-                "notComparableReason": incomparable_reason if not comparable else None,
+                "status": "confirmed",
+                "notComparableReason": None,
                 "severity": "P1", "confidence": 0.9,
                 "reproduction": [
                     "打开 {} 并定位元素 {}".format(page_url or "页面", anchor),
@@ -596,8 +614,15 @@ def main() -> int:
     elif len(probe) >= MIN_PAIRS_FOR_NORMALIZE:
         xs = sorted(p[0] for p in probe)
         ys = sorted(p[1] for p in probe)
-        mid = len(probe) // 2
-        offsets = (xs[mid], ys[mid])
+        # 【F20】真中位数：偶数个样本取中间两值均值（旧版 xs[len//2] 在偶数时偏右，
+        # 少数错配对会污染基准）。
+        def _median(sorted_vals):
+            n = len(sorted_vals)
+            mid = n // 2
+            if n % 2 == 1:
+                return float(sorted_vals[mid])
+            return (float(sorted_vals[mid - 1]) + float(sorted_vals[mid])) / 2.0
+        offsets = (_median(xs), _median(ys))
         position_basis = "auto-normalized-median"
     elif len(probe) >= 1:
         offsets = (0.0, 0.0)

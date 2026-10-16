@@ -122,19 +122,36 @@ def stroke(strokes: list) -> list:
             continue
         align = s.get("strokeAlign", "CENTER")
         weight = round2(s.get("strokeWeight", 1) or 1)
-        css_weight = weight if align == "CENTER" else weight
+        # 【F16】按 align 换算 CSS 边框宽度：CENTER 描边一半在盒外，
+        # 页面 CSS border 对应 1/2 可视宽度；INSIDE 才是 1:1。
+        # 旧代码两分支相同（复制粘贴 bug），与注释「CENTER 应取 1/2」矛盾。
+        css_weight = round2(weight / 2.0) if align == "CENTER" else weight
         out.append({
             "paint": paint(s),
             "weightPx": weight,
             "align": align,
             "cssBorderPx": css_weight,
             "note": {
-                "INSIDE": "border 计入盒内，等价 box-sizing:border-box",
+                "INSIDE": "border 计入盒内，等价 box-sizing:border-box（cssBorderPx=weightPx）",
                 "OUTSIDE": "border 在盒外，页面常用 outline 或额外占位实现",
-                "CENTER": "border 居中绘制，页面上应取 1/2 可视宽度",
+                "CENTER": "border 居中绘制，页面上应取 1/2 可视宽度（cssBorderPx=weightPx/2）",
             }.get(align, "border 居中绘制"),
         })
     return out
+
+
+def _radius_of(node: dict):
+    """【F15】设计节点的「生效圆角」：corners（独立四角）优先取最大值，
+    否则回落 uniform；cornerRadius 键真缺失时返回 None（不伪造 0.0）。"""
+    corners = node.get("rectangleCornerRadii")
+    if isinstance(corners, list) and corners:
+        try:
+            return round2(max(float(v) for v in corners))
+        except (TypeError, ValueError):
+            pass
+    if "cornerRadius" in node:
+        return round2(node.get("cornerRadius") or 0)
+    return None
 
 
 def effects(items: list) -> list:
@@ -197,11 +214,13 @@ def node_model(node: dict, frame_origin: dict | None = None) -> dict:
         },
         "fills": [paint(p) for p in (node.get("fills") or []) if isinstance(p, dict) and p.get("visible", True)],
         "strokes": stroke(node.get("strokes")),
-        "radius": {
-            "uniform": round2(node.get("cornerRadius", 0) or 0),
-            "corners": node.get("rectangleCornerRadii"),
-            "perCorner": bool(node.get("rectangleCornerRadii")),
-        },
+        # 【F15】独立四角圆角优先：uniform 恒存在（缺省 0.0），旧比较逻辑直接取
+        # uniform → 设计用独立四角（rectangleCornerRadii=[8,8,0,0]，卡片/半屏弹层
+        # 极常见）时设计侧恒 0、页面侧取 8 → 报 confirmed 圆角假缺陷。
+        # 比较端消费的是本模块的 radius 值——这里把「生效圆角」直接算好：
+        # corners 存在时取四角最大值（与 compare_fields 的取 max 口径一致），
+        # uniform 真缺失（键不存在）返回 None 而非 0.0。
+        "radius": _radius_of(node),
         "effects": effects(node.get("effects")),
         "clipsContent": node.get("clipsContent"),
     }

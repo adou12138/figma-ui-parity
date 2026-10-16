@@ -114,11 +114,18 @@ class Builder:
 
     def add(self, name, dimension, *, level="page", element=None, action=None, expected="", assertions=None,
             data=None, safety="safe", source="baseline", precondition=None, viewport=None, runner=None) -> None:
-        if len(self.items) >= self.max_scenarios:
+        # 【F27】缺陷级维度（7.23 设计/页面差异、7.34 角色越权）享**独立预算**：
+        # 它们最能直接反映真缺陷，却排在生成序列末尾——max_scenarios 满即丢且无告警。
+        # 这类场景不与元素级异常数据共享上限，超出 max_scenarios 也允许进入
+        # （总量会超一点，但被丢的不会再是最有价值的场景）。
+        PRIORITY_DIMENSIONS = {"7.23", "7.34"}
+        if len(self.items) >= self.max_scenarios and dimension not in PRIORITY_DIMENSIONS:
             # 截断必须留痕：被丢弃的场景按维度计数并随结果输出，
             # 由报告写明，不允许静默丢弃。
             self.dropped[dimension] = self.dropped.get(dimension, 0) + 1
             return
+        if dimension in PRIORITY_DIMENSIONS and len(self.items) >= self.max_scenarios:
+            print("[warn] 7.23/7.34 缺陷级场景超出 max_scenarios（独立预算）: {}".format(name))
         index = len(self.items) + 1
         self.items.append({
             "id": "S-{:04d}".format(index),
@@ -183,13 +190,33 @@ def build(args) -> dict:
     b.add("页面默认态", "7.1", expected="整页样式与设计一致",
           assertions=["样式层无超容差差异", "像素 diff 在阈值内"], source="baseline")
     if buttons:
-        anchor = buttons[0].get("text") or buttons[0].get("selector")
-        b.add("按钮悬停态", "7.2", element={"selector": buttons[0].get("selector"), "nth": buttons[0].get("nth", 0), "anchor": anchor},
-              action={"type": "hover"}, expected="悬停样式符合设计（背景/边框/阴影变化）",
-              assertions=["hover 前后样式差与设计 variant 一致"], source="element-inventory")
-        b.add("键盘焦点态", "7.29", element={"selector": buttons[0].get("selector"), "nth": buttons[0].get("nth", 0), "anchor": anchor},
-              action={"type": "focus"}, expected="焦点可见（outline 或等价 focus-visible 样式）",
-              assertions=["focus 后存在可见焦点环", "outline 未被 outline:none 清除"], source="element-inventory")
+        # 【F28 反覆盖率虚高】7.2(hover)/7.29(焦点)只对 buttons[0] 生成一条 →
+        # 维度「已覆盖」但其余按钮交互态全无。按风险来源分组各取一个代表
+        # （删除/提交类 vs 普通类），最多 3 条，兼顾覆盖与用例预算。
+        def _pick_representatives(cands, limit=3):
+            risky = [c for c in cands if any(
+                w in str(c.get("text") or "") or w in str(c.get("selector") or "")
+                for w in ("删除", "提交", "保存", "支付", "confirm", "delete", "submit", "pay"))]
+            reps, seen = [], set()
+            for c in (risky + [c for c in cands if c not in risky]):
+                key = (c.get("selector"), c.get("nth"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                reps.append(c)
+                if len(reps) >= limit:
+                    break
+            return reps
+        for rep in _pick_representatives(buttons):
+            anchor = rep.get("text") or rep.get("selector")
+            b.add("按钮悬停态：{}".format(anchor), "7.2",
+                  element={"selector": rep.get("selector"), "nth": rep.get("nth", 0), "anchor": anchor},
+                  action={"type": "hover"}, expected="悬停样式符合设计（背景/边框/阴影变化）",
+                  assertions=["hover 前后样式差与设计 variant 一致"], source="element-inventory")
+            b.add("键盘焦点态：{}".format(anchor), "7.29",
+                  element={"selector": rep.get("selector"), "nth": rep.get("nth", 0), "anchor": anchor},
+                  action={"type": "focus"}, expected="焦点可见（outline 或等价 focus-visible 样式）",
+                  assertions=["focus 后存在可见焦点环", "outline 未被 outline:none 清除"], source="element-inventory")
     b.add("加载态", "7.20", expected="骨架屏或 loading 占位符合设计且不闪烁",
           assertions=["存在 loading 指示", "加载完成后占位消失"], source="baseline")
     if empties:

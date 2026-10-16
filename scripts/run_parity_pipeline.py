@@ -88,6 +88,18 @@ def main() -> int:
     else:
         log["diff_score"] = {"status": "notRun", "reason": "缺少 --figma-png 或 --page-png"}
 
+    # 【F12】run_state_scenarios 此前没有任何管线入口调用它——7.25/7.26/7.32/7.33
+    # 四个维度「有场景、有 runner、无执行者」，产出恒 notRun。在 compare_fields
+    # 之后自动跑一轮页面级状态场景（安全策略内，无需登录态之外的配置），
+    # state_scenarios.json 存在时 assemble_report 已有接线会消费它。
+    if args.page_url and not args.dry_run:
+        stage("state_scenarios", [node, str(HERE / "node" / "run_state_scenarios.cjs"),
+                                  "--url", args.page_url,
+                                  "--out", str(workdir)],
+              args.dry_run, log)
+    else:
+        log.setdefault("state_scenarios", {
+            "status": "notRun", "reason": "缺少 --page-url（页面级状态场景需要目标 URL）"})
     audit_dir = workdir / "button-audit"
     if audit_dir.exists():
         stage("button_report", [node, str(HERE / "gen_button_report.cjs"), "--dir", str(audit_dir), "--out", str(outdir)],

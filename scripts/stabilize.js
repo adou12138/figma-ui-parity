@@ -111,6 +111,38 @@ async function stabilize(page, opts) {
   if (opts.waitNetworkIdle !== false) {
     await page.waitForLoadState('networkidle').catch(() => {});
   }
+  // 【F6】懒加载重校验：滚动回来后，视口内图片若仍未加载（懒加载失败/被拦截），
+  // 立即截图会把「破图占位」当真实渲染比对——尺寸/位置全错，diff 全页假缺陷。
+  // 这里给视口内未完成图片一次短重试窗口，仍失败则显式上抛（由调用方决定
+  // 是否按数据质量闸降级本轮），不再静默产出脏截图。
+  try {
+    const pending = await page.evaluate(() => {
+      const vh = window.innerHeight || 0;
+      return Array.prototype.filter.call(document.images, (img) => {
+        const r = img.getBoundingClientRect();
+        const inViewport = r.top < vh && r.bottom > 0;
+        return inViewport && !(img.complete && img.naturalWidth > 0);
+      }).length;
+    });
+    if (pending > 0) {
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForTimeout(800);
+      const stillPending = await page.evaluate(() => {
+        const vh = window.innerHeight || 0;
+        return Array.prototype.filter.call(document.images, (img) => {
+          const r = img.getBoundingClientRect();
+          return r.top < vh && r.bottom > 0 && !(img.complete && img.naturalWidth > 0);
+        }).length;
+      });
+      if (stillPending > 0) {
+        throw new Error('[stabilize] 视口内仍有 ' + stillPending + ' 张图片未加载（懒加载失败），'
+          + '此时截图会比对破图占位——请检查页面资源或对本轮标记数据质量降级');
+      }
+    }
+  } catch (e) {
+    if (String(e && e.message || '').indexOf('[stabilize]') === 0) throw e;
+    // 评估过程自身出错（页面上下文销毁等）不阻塞既有流程
+  }
   // 再次确保回到顶部
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
   await page.waitForTimeout(300);

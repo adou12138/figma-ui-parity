@@ -51,6 +51,10 @@ async function saveAuth(context, label) {
   await context.storageState({ path: STORAGE });
   const cookies = await context.cookies();
   fs.writeFileSync(COOKIES, JSON.stringify(cookies, null, 2));
+  // 【F32】session cookie 是凭据——默认 0644 同机其他用户可读。收紧到 0600
+  // （Windows 上 chmod 仅只读位生效，属尽力而为；POSIX 上是硬约束）。
+  try { fs.chmodSync(COOKIES, 0o600); } catch (e) { /* 尽力而为 */ }
+  try { fs.chmodSync(STORAGE, 0o600); } catch (e) { /* 尽力而为 */ }
   const state = JSON.parse(fs.readFileSync(STORAGE, 'utf8'));
   const info = {
     savedAt: new Date().toISOString(), label: label || '',

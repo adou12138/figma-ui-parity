@@ -86,7 +86,10 @@
     return 'generic';
   }
 
-  const RE_DANGER = /删除|移除|移出|清空|退出|注销|停用|禁用|解散|撤销|解绑|退款|支付|结算|批量删|下线|作废/;
+  // 【F30】风险词表单源化：与 scripts/node/risk_words.cjs 的 DANGER_WORDS 同源
+  // （此前纯中文，英文 Delete/Remove/Reset 按钮落 safe 被真点——安全问题）。
+  // 词表改动须同步 risk_words.cjs 与 discover_scenarios.py，parity 测试守住。
+  const RE_DANGER = /删除|移除|移出|清空|退出|注销|停用|禁用|解散|撤销|解绑|退款|支付|结算|批量删|下线|作废|销毁|重置|delete|remove|logout|signout|sign-out|unbind|destroy|drop|purge|terminate|reset/i;
   const RE_CAUTION = /保存|提交|确定|确认|创建|新建|添加|新增|导入|上传|发送|同步|发布|启用|开启|绑定|购买|续费|修改|编辑|更新|应用|分配|授权|合并|移动|转移|设为|重置/;
   function riskOf(label) {
     const t = norm(label);

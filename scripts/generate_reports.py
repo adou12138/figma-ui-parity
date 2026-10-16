@@ -111,6 +111,16 @@ def evidence_text(defect: dict) -> str:
     return " ".join([p for p in [text, "[{}]".format(status) if status else ""] if p]) or "-"
 
 
+def _csv_safe(value) -> str:
+    """【F33 反公式注入】Excel/Sheets 会把以 = + - @ 开头的单元格当公式执行——
+    缺陷描述来自页面/设计稿文本（不可信输入），` =HYPERLINK(...)` 型单元格能
+    构成从测试产物到分析者的攻击链。前置 ' 让它按文本呈现。"""
+    s = str(value if value is not None else "")
+    if s.startswith(("=", "+", "-", "@", "\t")):
+        return "'" + s
+    return s
+
+
 def write_csv(path: Path, defects: list) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
@@ -119,13 +129,13 @@ def write_csv(path: Path, defects: list) -> None:
         for index, d in enumerate(defects, 1):
             writer.writerow([
                 index,
-                GRADE_LABEL.get(str(d.get("severity")), str(d.get("severity", ""))),
-                d.get("category") or d.get("dimension", ""),
-                d.get("module") or d.get("scenario", ""),
-                describe(d),
-                d.get("suggestion", ""),
-                locate(d),
-                ("[P0] " if str(d.get("severity")) == "P0" else "") + evidence_text(d),
+                _csv_safe(GRADE_LABEL.get(str(d.get("severity")), str(d.get("severity", "")))),
+                _csv_safe(d.get("category") or d.get("dimension", "")),
+                _csv_safe(d.get("module") or d.get("scenario", "")),
+                _csv_safe(describe(d)),
+                _csv_safe(d.get("suggestion", "")),
+                _csv_safe(locate(d)),
+                _csv_safe(("[P0] " if str(d.get("severity")) == "P0" else "") + evidence_text(d)),
             ])
 
 

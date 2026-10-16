@@ -101,12 +101,17 @@ function isCandidateLink(href, baseUrl, opts) {
     try { base = new URL(baseUrl); } catch (e) { base = null; }
     if (base && base.origin !== u.origin) return { ok: false, reason: '跨源链接（默认不走）' };
   }
-  const lower = u.href.toLowerCase();
+  // 【F34】危险词匹配前做 decodeURIComponent 归一：`?action=%E5%88%A0%E9%99%A4`
+  // 解码后含「删除」，不归一时 indexOf 匹配不到 → 安全策略被 URL-encode 绕过。
+  // 解码失败（非法 % 序列）按原文匹配，不抛错。
+  let decoded = u.href.toLowerCase();
+  try { decoded = decodeURIComponent(u.href).toLowerCase(); } catch (e) { /* 保留原文 */ }
   for (const w of DANGER_WORDS) {
-    if (lower.indexOf(w) !== -1) return { ok: false, reason: '含危险词：' + w };
+    const wl = String(w).toLowerCase();
+    if (decoded.indexOf(wl) !== -1) return { ok: false, reason: '含危险词：' + w };
   }
   for (const ext of DOWNLOAD_EXT) {
-    if (lower.split('?')[0].endsWith(ext)) return { ok: false, reason: '下载类资源（不跟随）' };
+    if (decoded.split('?')[0].endsWith(ext)) return { ok: false, reason: '下载类资源（不跟随）' };
   }
   // 纯锚点（同页跳转）不构成跨页旅程
   try {
