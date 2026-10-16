@@ -67,8 +67,8 @@ function loadAuth() {
 /* ================= 纯函数（node 可测） ================= */
 
 const SKIP_SCHEMES = ['javascript:', 'mailto:', 'tel:', 'data:', 'blob:', 'about:'];
-const DANGER_WORDS = ['删除', '清空', '退出', '解绑', '退款', '支付', '下线', '注销', '移除', '销毁',
-  'delete', 'remove', 'logout', 'signout', 'sign-out', 'unbind', 'destroy'];
+// 风险词表单源在 risk_words.cjs（与 discover_scenarios.py 对拍，见 test_risk_words_parity.py）
+const { DANGER_WORDS } = require('./risk_words.cjs');
 const DOWNLOAD_EXT = ['.pdf', '.zip', '.rar', '.7z', '.tar', '.gz', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.mp4'];
 
 /** 解析为 URL 对象；无法解析（javascript: 等）返回 null */
@@ -135,6 +135,19 @@ function planVisits(links, maxLinks) {
     if (out.length >= maxLinks) break;
   }
   return out;
+}
+
+/** 跳过链接汇总：按 reason 计数 + Top N 明细。**只留痕不阻断**——目的是让报告
+ *  体现「哪些链接因何未访问」，否则 7.39 的覆盖质量（上限砍掉了什么）无从判断。 */
+function summarizeSkipped(skipped) {
+  const list = skipped || [];
+  const byReason = {};
+  list.forEach(s => { byReason[s.reason] = (byReason[s.reason] || 0) + 1; });
+  return {
+    total: list.length,
+    byReason,
+    sample: list.slice(0, 10).map(s => ({ href: s.href, reason: s.reason })),
+  };
 }
 
 /** 7.39 步骤判定：只硬判确定缺陷，其余 pending（见文件头纪律 4） */
@@ -204,8 +217,8 @@ async function pageState(page) {
   });
 }
 
-/** 提取当前页候选链接（实时 DOM） */
-async function extractLinks(page, baseUrl) {
+/** 提取当前页候选链接（实时 DOM）。skippedOut 可选：收集被剔除的链接及原因（留痕用）。 */
+async function extractLinks(page, baseUrl, skippedOut) {
   const raw = await page.evaluate(() => {
     const out = [];
     Array.prototype.slice.call(document.querySelectorAll('a[href]')).slice(0, 300).forEach((el) => {
@@ -223,9 +236,18 @@ async function extractLinks(page, baseUrl) {
   const seen = {};
   for (const l of raw) {
     const judge = isCandidateLink(l.href, baseUrl, { allowCrossOrigin: ALLOW_CROSS });
-    if (!judge.ok) continue;
-    if (l.isDownload) continue;
-    if (l.target === '_blank') continue; // 新标签页不跟随（记录在步骤里）
+    if (!judge.ok) {
+      if (skippedOut) skippedOut.push({ href: l.href, reason: judge.reason || 'not_candidate' });
+      continue;
+    }
+    if (l.isDownload) {
+      if (skippedOut) skippedOut.push({ href: l.href, reason: 'download' });
+      continue;
+    }
+    if (l.target === '_blank') {
+      if (skippedOut) skippedOut.push({ href: l.href, reason: 'new_tab' });
+      continue;
+    }
     if (seen[judge.url]) continue;
     seen[judge.url] = 1;
     links.push({ url: judge.url, href: l.href, visible: l.visible, text: l.text, target: l.target });
@@ -334,6 +356,9 @@ async function main() {
     await stabilize(page, {});
 
     const journeys = [];
+    // 被剔除的链接（非候选 / 下载 / 新标签页）汇总到这里：跳过原因必须落产物，
+    // 否则报告体现不出「哪些链接因何未访问」，7.39 的覆盖质量无法判断。
+    const skippedLinks = [];
     const allFindings = [];
     let visits = 0;
     // BFS：queue 元素 { url, hops, path }
@@ -360,7 +385,7 @@ async function main() {
       const runtimeFindings = await collectRuntime(page);
       // 基准用**页面实际 URL**而不是 node.url：发生重定向（/page → /page?tab=2）时，
       // 按 node.url 解析相对链接会得到错误的绝对地址。
-      const links = node.hops < MAX_HOPS ? await extractLinks(page, startState.url) : [];
+      const links = node.hops < MAX_HOPS ? await extractLinks(page, startState.url, skippedLinks) : [];
       const plan = planVisits(links, MAX_LINKS);
       const steps = [];
 
@@ -435,7 +460,8 @@ async function main() {
       bounds: { maxHops: MAX_HOPS, maxVisits: MAX_VISITS, maxLinksPerPage: MAX_LINKS },
       journeys,
       summary: { journeys: journeys.length, visits, findingsTotal: deduped.length,
-                 findingsRaw: allFindings.length, byDimension: byStatus },
+                 findingsRaw: allFindings.length, byDimension: byStatus,
+                 skippedLinks: summarizeSkipped(skippedLinks) },
     };
     fs.writeFileSync(path.join(OUT, 'journeys.json'), JSON.stringify(payload, null, 2), 'utf8');
     fs.writeFileSync(path.join(OUT, 'journey_findings.json'),

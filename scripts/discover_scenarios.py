@@ -36,7 +36,10 @@ CASE_LABEL = {
     "multiline": "多行", "long-url": "长链接", "html-injection": "标签字符", "extreme-number": "极端数值",
 }
 
-DANGER_WORDS = ["删除", "清空", "退出", "解绑", "退款", "支付", "下线", "注销", "移除", "delete", "remove", "logout"]
+DANGER_WORDS = ["删除", "清空", "退出", "解绑", "退款", "支付", "下线", "注销", "移除", "销毁",
+                "delete", "remove", "logout", "signout", "sign-out", "unbind", "destroy"]
+# 风险词表单源是 scripts/node/risk_words.cjs（js 侧为超集）；本常量与它对拍，
+# 由 scripts/tests/test_risk_words_parity.py 保证两边集合一致，改词表只改一处再同步。
 CAUTION_WORDS = ["保存", "提交", "创建", "新增", "导入", "上传", "发送", "同步", "发布", "确认", "绑定",
                  "save", "submit", "create", "import", "upload", "send", "sync", "publish"]
 MODAL_WORDS = ["新增", "添加", "编辑", "修改", "选择", "设置", "详情", "分享", "create", "add", "edit"]

@@ -278,7 +278,7 @@ def main() -> int:
              d.get("big", {}).get("changedPixels") == 400 and d.get("big", {}).get("suppressed", {}).get("edgeNoise") == 0,
              json.dumps({"c": d.get("big", {}).get("changedPixels"), "s": d.get("big", {}).get("suppressed", {})}))
 
-    # 11) scenario_coverage：真实产物串链（计划 → 回填 → 门禁），v4.22.0
+    # 11) scenario_coverage：真实产物串链（计划 → 回填 → 门禁），v4.23.0
     sc_res = tmp / "sc_results.json"
     sc_out = tmp / "sc_cov.json"
     sc_plan = json.loads((tmp / "scenarios.json").read_text(encoding="utf-8"))

@@ -143,6 +143,57 @@ def kv_table(mapping: dict) -> str:
     return "<table class='kv'>{}</table>".format(rows)
 
 
+def scenario_coverage_table(cov) -> str:
+    """场景执行率专区渲染。
+
+    scenario_coverage.py 的产物是多层嵌套 dict（planned/executed/notExecuted/...），
+    直接交给 kv_table 会被 str() 成 Python dict repr，读者看不见执行率与未执行分布。
+    这里把它扁平化成「关键指标 + 未执行按维度 + 未写原因 + 不稳定场景」四段。
+    """
+    if not isinstance(cov, dict) or not cov:
+        return "<p class='muted'>无场景统计</p>"
+    if "planned" not in cov and "executed" not in cov:
+        # 其他形状（如早期 scenarioSummary）：容器值压平成可读串，别输出 repr
+        flat = {k: (v if isinstance(v, (str, int, float, bool)) else str(v))
+                for k, v in cov.items()}
+        return kv_table(flat)
+    planned = cov.get("planned") or {}
+    executed = cov.get("executed") or {}
+    notrun = cov.get("notExecuted") or {}
+    multi = cov.get("multipleRecords") or {}
+    rate = executed.get("rate")
+    rate_txt = "{}%".format(round(rate * 100, 1)) if isinstance(rate, (int, float)) else "—"
+    parts = [kv_table({
+        "计划场景总数": planned.get("total", 0),
+        "计入执行率": planned.get("counted", 0),
+        "已执行": executed.get("total", 0),
+        "执行率": rate_txt,
+        "未执行": notrun.get("total", 0),
+        "截断丢弃": planned.get("truncated", 0),
+        "豁免维度": "、".join(planned.get("exemptDimensions") or []) or "无",
+    })]
+    by_dim = notrun.get("byDimension") or {}
+    if by_dim:
+        rows = "".join("<tr><th>{}</th><td>{} 条</td></tr>".format(
+            html.escape(str(d)), html.escape(str(n))) for d, n in list(by_dim.items())[:10])
+        parts.append("<h3>未执行场景按维度（Top 10）</h3><table class='kv'>{}</table>".format(rows))
+    unexplained = notrun.get("unexplained") or []
+    if unexplained:
+        parts.append("<p class='note'>未写原因的未执行 {} 条：{}</p>".format(
+            len(unexplained), html.escape("、".join(str(x) for x in unexplained[:10]))))
+    flaky = multi.get("flakyScenarioIds") or []
+    if flaky:
+        parts.append("<p class='note'>不稳定场景（终态不一致）{} 个：{}</p>".format(
+            len(flaky), html.escape("、".join(str(x) for x in flaky[:10]))))
+    unknown = cov.get("unknownResults") or []
+    if unknown:
+        parts.append("<p class='note'>计划外回填 {} 个（可能来自旧计划）：{}</p>".format(
+            len(unknown), html.escape("、".join(str(x) for x in unknown[:10]))))
+    if cov.get("note"):
+        parts.append("<p class='note'>{}</p>".format(html.escape(str(cov["note"]))))
+    return "".join(parts)
+
+
 def section(title: str, content: str, note: str = "") -> str:
     return "<section><h2>{}</h2>{}<div>{}</div></section>".format(
         html.escape(title), "<p class='note'>{}</p>".format(html.escape(note)) if note else "", content)
@@ -319,7 +370,7 @@ figcaption{{font-size:12px;color:#57606a}}
             "缩放": str(payload.get("scale", "")),
             "可比性": str(payload.get("comparability", "")),
         }), "位置比对前必须归一坐标基准，否则整体偏移会被误报为每元素位移"),
-        scenario_section=section("场景覆盖", kv_table(scenarios) if isinstance(scenarios, dict) else "<p class='muted'>无场景统计</p>"),
+        scenario_section=section("场景覆盖", scenario_coverage_table(scenarios) if isinstance(scenarios, dict) else "<p class='muted'>无场景统计</p>"),
         shot_section=section("并排截图", gallery(payload.get("screenshots") or [], [("design", "设计稿"), ("page", "实际页面")])),
         heat_section=section("差异热力图", gallery(payload.get("heatmaps") or [], [("image", "热力图")])),
         style_section=section("样式分组差异", style_diff_groups(style_diffs)),

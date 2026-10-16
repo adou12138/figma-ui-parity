@@ -35,6 +35,55 @@
 
 去掉 Figma URL 时，报告标题不得写"还原度对比"，只能写"页面 UI 走查"。
 
+### 无设计稿快速档（只有页面 URL 时）
+
+只有页面 URL 也能跑完一条完整链路——**关键是别去凑设计稿**。管线对缺失输入有既定约定：缺哪个输入就跳过对应阶段，并在 `pipeline-log.json` 里写 `notRun` + 原因，不伪造成功。所以只要不传 `--design-json` / `--figma-png`，设计侧阶段会自动让位。
+
+**第 1 步：主链路（一条命令）**
+
+```bash
+python scripts/run_parity_pipeline.py \
+  --workdir ./parity-test \
+  --page-url "<页面URL>" \
+  --page-json ./parity-test/page.json \
+  --report ./parity-test/report.json \
+  --outdir ./parity-test/reports
+```
+
+不传 `--design-json` / `--figma-png`，`compare_fields` 与像素 diff 阶段自动跳过并留痕。
+
+**第 2 步：交互类维度（按本轮安全策略挑选，不交互的一项都不跑）**
+
+```bash
+# 按钮可用性与双向盘点（7.22）
+node scripts/node/run_button_audit.cjs --url "<页面URL>" --safety-policy <策略> --out ./parity-test/buttons
+
+# 状态场景（7.25 暗色 / 7.26 打印 / 7.33 接口异常）
+node scripts/node/run_state_scenarios.cjs --url "<页面URL>" --safety-policy <策略> --out ./parity-test/state-scenarios
+
+# 多页用户旅程（7.39）
+node scripts/node/run_journeys.cjs --url "<页面URL>" --safety-policy <策略> --out ./parity-test/journeys
+```
+
+参数以各脚本 `--help` 为准；`staticOnly` 策略下这三个脚本都不启动浏览器，相应维度填 `notRun:策略不允许交互`。
+
+**第 3 步：报告**
+
+跑 `generate_reports.py` 出 HTML/JSON/CSV 三件套。标题写"页面 UI 走查"，**不得出现"还原度"**。
+
+**预期 `notRun` 清单**（这些是缺设计稿的必然结果，写清原因即可，不算漏测）：
+
+| 维度 | 原因 |
+|---|---|
+| 7.1–7.6（像素层） | 未提供设计稿，无比对基准 |
+| 7.7–7.8（样式/图标层） | 同上 |
+| 7.23（元素双向盘点） | 只有单侧（页面）数据，无法双向 |
+| 7.34（角色差异） | 未提供 `--roles`，非默认步骤 |
+
+**能覆盖到的**：7.9–7.22（响应式 / 健壮性 / 行为 / 按钮）、7.24–7.33（静态探测 + 状态场景）、7.35–7.38（运行期观测）、7.39（旅程）——占 39 个维度里的一半以上。
+
+> 反例提醒：不要因为"没有设计稿"就整体拒答，也不要为了凑数去网上找一张相似图当基准——那会把主观比对伪装成还原度结论。
+
 ## 测试启动门禁
 
 环境检查不是 Skill 加载动作。只有用户明确启动 UI parity 测试，或同一轮同时提供 Figma URL 与页面 URL 时，才调用 `scripts/start_test.py`。单纯咨询依赖、查看配置或只提供单个 URL 不触发。
