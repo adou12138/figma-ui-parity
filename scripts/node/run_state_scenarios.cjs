@@ -241,7 +241,19 @@ async function main() {
   try {
     if (auth && auth.restoreAuth) await auth.restoreAuth(context).catch(() => {});
     const page = context.pages()[0] || await context.newPage();
-    await page.goto(URL_, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => console.warn('[warn] goto:', String(e).slice(0, 120)));
+    // 【F9】起始页不可达时不得继续：在 about:blank 上探测会把 7.25/7.26 判成 pass（假绿）。
+    try {
+      await page.goto(URL_, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    } catch (e) {
+      console.error('[fatal] 起始页不可达，状态场景无法执行:', String(e).slice(0, 200));
+      const out = path.join(OUT, 'state_scenarios.json');
+      fs.mkdirSync(OUT, { recursive: true });
+      const notrun = ['7.25', '7.26', '7.32', '7.33']
+        .filter(d => !ONLY.size || ONLY.has(d))
+        .map(d => ({ dimension: d, status: 'notRun', reason: '起始页不可达：' + String(e).slice(0, 120), findings: [] }));
+      fs.writeFileSync(out, JSON.stringify({ url: URL_, error: 'start-url-unreachable', results: notrun }, null, 2));
+      process.exit(2);
+    }
     await stabilize(page, {});
 
     const results = [];

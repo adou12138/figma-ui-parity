@@ -246,8 +246,12 @@ def main() -> int:
     ck.check("P1-7 宽泛/缺到期信息的忽略项被 enforce 拦截", r.returncode == 1, "rc={}".format(r.returncode))
 
     # 9) coverage_gate：缺维度时 enforce 拦截
+    # 【F23 配套】report.json 只写了 defects、没有任何 checks——旧版只判覆盖率低
+    # （rc=1），新版把「维度整体缺失」计入 unexplained，先以 rc=5（未写明原因）拦截。
+    # 两种 rc 都是「被拦住」；这里断言"必须非 0"，并显式锁 F23 的新语义 rc=5。
     r = run([py, S / "coverage_gate.py", "--report", tmp / "report.json", "--enforce"])
-    ck.check("coverage_gate 低覆盖被 enforce 拦截", r.returncode == 1, "rc={}".format(r.returncode))
+    ck.check("coverage_gate 缺维度被 enforce 拦截（F23: 缺失=未说明, rc=5）",
+             r.returncode == 5, "rc={}".format(r.returncode))
 
     # 10) diff_score 增强模式：默认口径不变 + 边缘/孤立抑制 + 平坦区真缺陷不被压掉（v4.16.0）
     node_exe = _find_node()

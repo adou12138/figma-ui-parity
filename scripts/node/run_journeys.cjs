@@ -352,7 +352,27 @@ async function main() {
     const page = context.pages()[0] || await context.newPage();
     // 运行期钩子随每个文档自动安装（旅程每步都能采到 7.35–7.38）
     await page.addInitScript(OBS_SRC);
-    await page.goto(URL_, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(e => console.warn('[warn] goto:', String(e).slice(0, 120)));
+    // 【F9 反假通过】起始页 goto 失败（DNS/超时/拒绝连接）时不得继续：在 about:blank
+    // 上跑完旅程会产出「0 缺陷 + 各维度 pass」的假绿报告。起始页不可达 = 7.25/7.26/7.39
+    // 全部无法验证，必须以非零码退出并把原因写明。
+    try {
+      await page.goto(URL_, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    } catch (e) {
+      console.error('[fatal] 起始页不可达，旅程无法执行（不得在空白页产出假通过报告）:',
+        String(e).slice(0, 200));
+      const out = path.join(OUT, 'journey_findings.json');
+      fs.mkdirSync(OUT, { recursive: true });
+      fs.writeFileSync(out, JSON.stringify({
+        error: 'start-url-unreachable',
+        url: URL_,
+        reason: String(e).slice(0, 300),
+        findings: [],
+        dimensionEvidence: { '7.25': { status: 'notRun', reason: '起始页不可达' },
+                             '7.26': { status: 'notRun', reason: '起始页不可达' },
+                             '7.39': { status: 'notRun', reason: '起始页不可达' } },
+      }, null, 2));
+      process.exit(2);
+    }
     await stabilize(page, {});
 
     const journeys = [];

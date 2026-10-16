@@ -21,6 +21,34 @@
 (() => {
   const NL = String.fromCharCode(10);
 
+  /* ================= 凭据脱敏（F31 红线） =================
+   * 写请求 body 原文 / 失败请求 query 会进 findings.raw 并一路流到 report.json /
+   * CSV / xlsx——登录、改密表单的 urlencoded body 里有明文密码，带 token 的请求
+   * query 里有会话凭据。SKILL.md 红线「产物不得写入 token/Cookie」必须有采集端
+   * 执行点，而不是只写在注释里。命中敏感键名的值一律替换为 [REDACTED]。
+   */
+  const SENSITIVE_KEY = /(password|passwd|pwd|token|secret|authorization|auth|cookie|session|apikey|api[-_]?key|access[-_]?key|credential)/i;
+  const redact = (text) => {
+    let s = String(text == null ? '' : text);
+    if (!s) return s;
+    // ① urlencoded / 表单形态：password=xxx&token=yyy（值取到 & 或结尾）
+    s = s.replace(/([?&]?)([A-Za-z0-9_\-]*?(?:password|passwd|pwd|token|secret|apikey|api_key|access_key|credential|authorization|session)[A-Za-z0-9_\-]*)(=)([^&\s]*)/gi,
+      (m, pre, key, eq) => pre + key + eq + '[REDACTED]');
+    // ② JSON 形态："password":"xxx" / 'token': 'yyy'
+    s = s.replace(/(["'])(?:(?!\1)[^\\])*?(?:password|passwd|pwd|token|secret|apikey|api_key|access_key|credential|authorization|session)(?:(?!\1)[^\\])*?\1(\s*:\s*)(["'])(?:(?!\3).)*?\3/gi,
+      (m, q1, mid, q2) => q1.slice(0, 1) + mid + q2 + '[REDACTED]' + q2);
+    // ③ Bearer / Basic 请求头形态
+    s = s.replace(/(Bearer\s+)[A-Za-z0-9._\-]+/gi, '$1[REDACTED]');
+    s = s.replace(/(Basic\s+)[A-Za-z0-9+/=]+/gi, '$1[REDACTED]');
+    return s;
+  };
+  const redactUrl = (u) => {
+    let s = String(u == null ? '' : u);
+    if (!s) return s;
+    // query 里带 token/session 的 URL 打码（保留 path 可定位）
+    return s.replace(/((?:\?|&)[^=\s]*?(?:token|session|auth|key|secret|credential)[^=\s]*?=)[^&\s]*/gi, '$1[REDACTED]');
+  };
+
   const visible = (el) => {
     if (!el || !el.getBoundingClientRect) return false;
     const r = el.getBoundingClientRect();
@@ -132,6 +160,17 @@
 
   /* ================= ② 采集 ================= */
   const obs = window.__vpObs;
+  // 【F11】钩子未安装时不得静默返回 []（与「页面干净」不可区分）：带显式标记返回，
+  // 调用方据 hooksInstalled=false 填 notRun。
+  if (!obs) {
+    return JSON.stringify({
+      mode: 'collect', url: location.href, findings: [],
+      hooksInstalled: false, interactionsObserved: 0,
+      note: '钩子未安装（本页面未执行过 install 阶段）——本轮采集无效，'
+          + '7.35-7.38 必须填 notRun，不得视为「页面干净」。',
+      summary: { total: 0, byDimension: {}, errorCount: 0, requestCount: 0, overlayOpen: false },
+    });
+  }
 
   // --- 7.35 运行期 JS 异常（按文本去重，最多 20 条）---
   const seenErr = {};
@@ -157,11 +196,11 @@
     seenReq[key] = 1;
     if (findings.filter((f) => f.dimension === '7.36').length >= 20) return;
     const server = r.status >= 500 || r.status === 0;
-    push('7.36', '交互过程中请求失败：' + r.method + ' ' + r.url + '（状态 ' + r.status + '）',
+    push('7.36', '交互过程中请求失败：' + r.method + ' ' + redactUrl(r.url) + '（状态 ' + r.status + '）',
       '交互触发的请求应成功返回；失败时界面应给出明确提示而非静默',
       '状态码 ' + r.status + (r.error ? '，错误 ' + r.error : ''), null,
       { severityHint: server ? 'P1' : 'P2', confidence: 0.8, property: 'network-failure', evidenceType: 'request-hook',
-        raw: { method: r.method, url: r.url, status: r.status, body: String(r.body || '').slice(0, 200) } });
+        raw: { method: r.method, url: redactUrl(r.url), status: r.status, body: redact(String(r.body || '').slice(0, 200)) } });
   });
 
   // --- 7.37 重复请求 / 重复提交（仅写方法，避免把轮询 GET 误报）---
@@ -169,7 +208,8 @@
   const groups = {};
   obs.requests.forEach((r) => {
     if (!WRITE[r.method]) return;
-    const sig = r.method + ' ' + r.url.split('?')[0] + ' ' + String(r.body || '').slice(0, 300);
+    // 签名里的 body 也可能含凭据（同一签名会进 raw.signature）——同样脱敏后再拼接。
+    const sig = r.method + ' ' + r.url.split('?')[0] + ' ' + redact(String(r.body || '').slice(0, 300));
     (groups[sig] = groups[sig] || []).push(r);
   });
   Object.keys(groups).forEach((sig) => {
@@ -228,13 +268,22 @@
   }
 
   // 说明：本文件采集的是"运行期"证据，须在安装钩子并完成一轮交互后再调用采集。
+  // 【F11】「未装钩子」与「页面干净」必须可区分：二者都产出 findings=[]，但含义完全
+  // 不同——前者是"没观测到任何东西"（须 notRun），后者才是"观测到了且干净"。
+  // hooksInstalled=false 或采集抛错时带显式标记，调用方不得据此填 pass。
+  const hooksInstalled = !!(obs && (obs.errors.length || obs.requests.length
+    || (Date.now() - (obs.startedAt || Date.now())) >= 0));
   return JSON.stringify({
     mode: 'collect',
     url: location.href,
     findings,
+    hooksInstalled: hooksInstalled,
+    interactionsObserved: obs.requests.length,
+    collectError: (typeof window.__vpCollectError !== 'undefined') ? window.__vpCollectError : null,
     note: '运行期观测：7.35 异常 / 7.36 网络失败 / 7.37 重复提交 / 7.38 遮挡。'
       + '7.37/7.38 判据保守（pending），需人工复核后再落确定缺陷；'
-      + '未安装钩子时先调用一次安装，' + NL + '未触发交互则相应维度填 notRun。',
+      + 'hooksInstalled=false 或 interactionsObserved=0 时该轮采集无效，'
+      + '相关维度必须填 notRun（未证明执行=未执行），不得凭空填 pass。未触发交互则相应维度填 notRun。',
     summary: {
       total: findings.length,
       byDimension: findings.reduce((acc, f) => { acc[f.dimension] = (acc[f.dimension] || 0) + 1; return acc; }, {}),

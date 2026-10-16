@@ -56,9 +56,12 @@ check('7.26 非操作链接不误报', f.length === 0, JSON.stringify(f));
 f = api.failureFindings({ visibleChars: 12, skeletonCount: 0, errorText: '' });
 check('7.33 白屏记 confirmed P1', f.length === 1 && f[0].status === 'confirmed' && f[0].severityHint === 'P1', JSON.stringify(f));
 
-// 7.33 内容少但有错误提示 → 合法错误态，不判白屏（防误报）
+// 7.33 内容少但有错误提示 → 【F13 反转】白屏证据独立成条，错误提示只降级不取消：
+// 旧断言"不判白屏"恰是 F13 假通过链（[class*=message] 子串抓到成功提示旧节点 →
+// hasError 抵消白屏 → 7.33 假通过）。现在产出 pending 白屏 finding 交人工确认。
 f = api.failureFindings({ visibleChars: 8, skeletonCount: 0, errorText: '加载失败，请重试' });
-check('7.33 短错误提示页不判白屏', f.length === 0, JSON.stringify(f));
+check('7.33 短错误提示页白屏降级 pending（F13: 提示不抵消白屏）',
+  f.length === 1 && f[0].status === 'pending' && f[0].property === 'failure-white-screen', JSON.stringify(f));
 
 // 7.33 骨架残留 → confirmed P1（与白屏可同时出）
 f = api.failureFindings({ visibleChars: 12, skeletonCount: 3, errorText: '' });
@@ -187,13 +190,15 @@ function makeEnv(mode, docSpec) {
     JSON.stringify(out).slice(0, 240));
 }
 
-// 失败采集：有错误提示 → 不误报
+// 失败采集：有错误提示 → 【F13 反转】白屏 finding 仍产出但降级 pending（提示不抵消白屏）
 {
   const err = makeEl('div', { text: '加载失败，请重试' });
   setStyle(err, {});
   const env = makeEnv('failure', { error: [err], all: [], bodyText: '加载失败，请重试' });
   const out = JSON.parse(env.call());
-  check('页内采集 failure 有错误提示不误报', out.findings.length === 0, JSON.stringify(out).slice(0, 200));
+  const ws = out.findings.filter(x => x.property === 'failure-white-screen');
+  check('页内采集 failure 有提示时白屏降级 pending（F13）',
+    ws.length === 1 && ws[0].status === 'pending', JSON.stringify(out).slice(0, 200));
 }
 
 /* ---------------- ③ 静态纪律：无反斜杠 ---------------- */

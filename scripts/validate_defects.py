@@ -111,11 +111,22 @@ def main() -> int:
                 if not defect.get(field):
                     errors.append("{}.{}: 严格模式下不允许为空".format(path, field))
 
+    # 【F25 反静默假通过】严格模式下要求 report **显式存在**缺陷数组键（允许空数组
+    # 但键必须在）：「忘了填缺陷数组」与「真零缺陷」产出完全相同的 exit 0——前者是
+    # 最常见的静默假通过形态，配合报告出口的形状分歧曾形成完整假通过链。
+    if args.strict and not any(
+            isinstance(report.get(k), list) for k in ("defects", "defectList", "issues")):
+        errors.append("严格模式：report 缺少显式缺陷数组键（defects/defectList/issues 任一，"
+                      "允许空数组但键必须存在）——「忘填」与「真零缺陷」必须可区分")
+
     result = {"checked": len(entries), "errors": len(errors), "strict": args.strict,
               "dimensionsCovered": sorted({str(d.get("dimension")) for _, d in entries if d.get("dimension")})}
-    if args.write and isinstance(report.get("meta"), dict):
+    if args.write and not errors and isinstance(report.get("meta"), dict):
         report["meta"]["defectValidation"] = result
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    elif args.write and errors:
+        # 【F25 配套】校验失败时不写回——help 承诺「通过时写回」，旧行为失败也写。
+        print("--write 已跳过：校验失败时不写回报告", file=sys.stderr)
 
     if errors:
         print(json.dumps(result, ensure_ascii=False, indent=2))

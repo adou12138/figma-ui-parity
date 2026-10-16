@@ -70,6 +70,11 @@ def main() -> int:
     workdir: Path = args.workdir
     outdir: Path = args.outdir or workdir / "reports"
     log: dict = {"workdir": str(workdir), "dryRun": args.dry_run}
+    # 【F2】pool 只在 compare_fields 分支里赋值，而尾部 pattern_pool_merge 在
+    # `if args.report` 分支用它——「只重出报告」用法（--report 不带 --design-json/
+    # --page-json，最常见）会 UnboundLocalError 崩溃，且崩溃发生在 pipeline-log
+    # 写入之前，失败无痕。提到 main() 开头初始化。
+    pool = None if args.no_patterns else (args.patterns or (HERE.parent / "assets" / "defect_patterns.json"))
 
     if args.page_url:
         stage("stabilize", [node, str(HERE / "stabilize.js"), "--url", args.page_url], args.dry_run, log)
@@ -109,7 +114,7 @@ def main() -> int:
         # 模式池接入：默认把 assets/defect_patterns.json 传给 discover_scenarios，
         # 让「历史高频翻车的维度必被覆盖」在标准管线里真的发生。池为空时
         # pattern_weights 返回 {}、applied=false，产物与不传完全一致（冷启动零影响）。
-        pool = None if args.no_patterns else (args.patterns or (HERE.parent / "assets" / "defect_patterns.json"))
+        # pool 已在 main() 开头初始化（F2），这里只做局部覆盖说明。
         patterns_args = [] if pool is None else ["--patterns", str(pool)]
         passthrough = []
         if args.combo_depth:
@@ -152,6 +157,32 @@ def main() -> int:
                                    "--report", str(args.report), "--strict"], args.dry_run, log)
         stage("coverage_gate", [sys.executable, str(HERE / "coverage_gate.py"),
                                 "--report", str(args.report), "--enforce", "--write"], args.dry_run, log)
+        # 【F3】门禁失败必须短路后续报告阶段——SKILL.md「校验不通过不得出报告」。
+        # 旧行为：validate/coverage 失败只记 status=failed，继续 generate_reports 并
+        # return 0，坏数据照常产出三件套报告（最危险的静默假通过）。
+        gate_failed = [n for n in ("validate_defects", "coverage_gate", "assemble_report")
+                       if log.get(n, {}).get("status") in ("failed",)]
+        if gate_failed and not args.dry_run:
+            for n in gate_failed:
+                print("[abort] {} 失败，按「校验不通过不得出报告」短路后续阶段".format(n))
+            log["generate_reports"] = {
+                "status": "notRun",
+                "reason": "门禁失败短路：{}".format(", ".join(gate_failed)),
+            }
+            log["baseline_regression"] = {
+                "status": "notRun",
+                "reason": "门禁失败短路：{}".format(", ".join(gate_failed)),
+            }
+            if "pattern_pool_merge" not in log:
+                log["pattern_pool_merge"] = {
+                    "status": "notRun",
+                    "reason": "门禁失败短路：{}".format(", ".join(gate_failed)),
+                }
+            outdir.mkdir(parents=True, exist_ok=True)
+            log_file = outdir / "pipeline-log.json"
+            log_file.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
+            print("日志: {}".format(log_file))
+            return 1
         ignore_file = workdir / "ignoredRegions.json"
         if ignore_file.exists():
             stage("ignore_regions", [sys.executable, str(HERE / "ignore_regions.py"),

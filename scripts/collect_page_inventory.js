@@ -9,7 +9,14 @@
  *        stickyOrFixed, scrollables, buttons[], inputs[], emptyStateCandidates[] }
  */
 (() => {
-  const CHAR_WS = String.fromCharCode(92) + 's';        // 反斜杠 s
+  // 【F5】旧写法 String.fromCharCode(92)+'s' 是字面量两字符 "\s"（反斜杠+s），
+  // 而 String.split() 不认正则——'btn primary'.split("\s") 根本不分裂，
+  // 多 class 元素的 selector 变成 `button.btn primary large`（后代选择器，永不命中），
+  // inventory 定位基石（selector/nth）全错、缺陷无法回页复核。
+  // split 需要的是「空白字符集」语义：用字符类 [ \t\n\r\f\v] 的字面拼接（不含反斜杠）。
+  const WS_RE = new RegExp('[' + String.fromCharCode(32) + String.fromCharCode(9)
+    + String.fromCharCode(10) + String.fromCharCode(13) + String.fromCharCode(12)
+    + String.fromCharCode(11) + ']+');
   const CHAR_UP = String.fromCharCode(65) + '-' + String.fromCharCode(90);
 
   const visible = (el) => {
@@ -25,7 +32,7 @@
     if (!el || !el.tagName) return '';
     if (el.id) return '#' + el.id;
     const cls = (el.className && typeof el.className === 'string')
-      ? el.className.split(CHAR_WS).filter(Boolean).slice(0, 2).join('.')
+      ? el.className.split(WS_RE).filter(Boolean).slice(0, 2).join('.')
       : '';
     const base = el.tagName.toLowerCase() + (cls ? '.' + cls : '');
     const parent = el.parentElement;

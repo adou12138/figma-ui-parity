@@ -16,6 +16,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const os = require('os');   // 【F4】resolveChrome 用 os.platform()/os.homedir()，顶部未 require 时 ReferenceError
 const { stabilize } = require('../stabilize.js');
 
 // ---- 参数 ----
@@ -95,6 +96,7 @@ const OFFICIAL = {
   icons: path.join(SKILL_SCRIPTS, 'extract_icons.js'),
   alignment: path.join(SKILL_SCRIPTS, 'alignment_modal_checks.js'),
   responsive: path.join(SKILL_SCRIPTS, 'responsive_check.js'),
+  inventory: path.join(SKILL_SCRIPTS, 'collect_page_inventory.js'),  // 【F4】:233 用到却缺声明 → path.join(SKILL_SCRIPTS, undefined) TypeError
 };
 for (const [k, p] of Object.entries(OFFICIAL)) {
   if (!fs.existsSync(p)) console.warn('[warn] missing official script:', k, p);

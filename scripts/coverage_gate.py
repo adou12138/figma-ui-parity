@@ -71,6 +71,10 @@ def main() -> int:
         if dim_id not in checks:
             missing_ids.append(dim_id)
             not_run += 1
+            # 【F23 反门禁绕过】维度**整体缺失**是最严重的未说明——删掉一行 checks
+            # 就能让该维度逃过「notRun 必须写原因」的检查（实测删 7.34 → exit 0、
+            # coverageRate 0.974）。缺失视同 notRun 未写原因，计入 unexplained。
+            unexplained.append("{} 维度整体缺失（未出现在 checks 中，缺维度=最严重的未说明）".format(dim_id))
             continue
         status, reason = status_of(checks[dim_id])
         if status not in VALID:

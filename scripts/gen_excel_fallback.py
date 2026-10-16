@@ -58,8 +58,35 @@ def module_name(el):
 
 
 def rows_from_report(report: dict):
-    """从 report.json 提取缺陷行：diffs(high/medium/low) + responsive.issues（均含 element 定位对象）"""
+    """从 report.json 提取缺陷行。
+
+    【F7 同源修复】旧版只读 dict 形 ``diffs{high,medium,low}``，从不读缺陷列表键
+    （defects/defectList/styleDiffs/findings/issues）——与 generate_reports.collect_defects
+    （只认列表形）对同一 report.json 各看一半数据：dict 形 → HTML/CSV 有缺陷而
+    Excel 0 条；列表形 → 反过来。现统一：先取列表形缺陷（与 collect_defects 同键序），
+    再补 dict 形 diffs 与 responsive.issues，两出口覆盖并集。
+    """
     rows = []
+    # 列表形缺陷（与 generate_reports.DEFECT_KEYS 同序，保证两出口同源）
+    for key in ("defects", "defectList", "diffs", "issues", "findings"):
+        val = report.get(key)
+        if isinstance(val, list):
+            for d in val:
+                if not isinstance(d, dict):
+                    continue
+                sev = str(d.get("severity", "")).lower()
+                rows.append({
+                    "等级": {"high": "高", "medium": "中", "low": "低"}.get(sev, d.get("severity", "中")),
+                    "缺陷类型": d.get("category", d.get("type", "视觉样式")),
+                    "功能模块": module_name(d.get("element")),
+                    "问题描述": d.get("issue", d.get("symptom", d.get("detail", ""))),
+                    "解决方案": d.get("fix", d.get("suggestion", "")),
+                    "元素定位": loc_str(d.get("element")),
+                    "备注(附图)": d.get("screenshot", d.get("note", "")),
+                })
+            if val:
+                break  # 取到第一路列表缺陷即止，避免同源数据重复计行
+    # dict 形 diffs{high,medium,low}（历史报告形状）
     for level in ("high", "medium", "low"):
         for d in report.get("diffs", {}).get(level, []):
             rows.append({
@@ -178,6 +205,12 @@ def main():
 
     wb.save(out_path)
     print(f"已生成 {out_path}（{len(rows)} 条缺陷）")
+    # 【F7 配套】0 缺陷必须出声：正常轮次几乎不可能真 0 缺陷，静默成功会让
+    # 「忘了填缺陷数组 / 键名不匹配」伪装成「零缺陷交付」。
+    if not rows:
+        print("警告：0 条缺陷——若本轮真实跑过比对，请检查 report.json 是否缺少"
+              "缺陷数组键（defects/diffs 等）或数据形状不符（详见 rows_from_report）。",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -200,15 +200,17 @@
     var skeleton = s.skeletonCount || 0;
     var hasError = s.errorHint || hasAny(s.errorText, FAILURE_ERROR_WORDS);
     var hasRetry = s.retryHint || hasAny(s.retryText, FAILURE_ERROR_WORDS);
-    // 白屏判定必须叠加"无错误提示"：只显示一条短错误提示的页面是合法错误态，
-    // 内容少不等于白屏（否则"加载失败，请重试"这种正确 UI 会被误判）。
-    if (chars < FAILURE_MIN_CHARS && !hasError) {
+    // 【F13】白屏证据与错误提示**独立成两条**：白屏 finding 一律产出（pending），
+    // 错误提示只把它降级（confirmed→pending），不能「抵消」白屏——
+    // 旧逻辑 hasError 为真就不报白屏，而 [class*=message] 子串会抓到成功提示旧节点，
+    // 接口全 500 后页面残留任意 message 节点 → 7.33 假通过。
+    if (chars < FAILURE_MIN_CHARS) {
       out.push(finding('7.33',
-        '接口返回 500 后内容区近乎空白（白屏），用户看不到任何内容或提示',
+        '接口返回 500 后内容区近乎空白（白屏）' + (hasError ? '，虽有错误提示但内容仍为空（需人工确认提示是否合格）' : '，用户看不到任何内容或提示'),
         '接口失败时展示错误提示或兜底内容，不白屏',
-        '拦截接口返回 500 并 reload 后，可见文本仅 ' + chars + ' 字符',
-        'P1', 0.8, 'confirmed', 'failure-white-screen',
-        { visibleChars: chars }));
+        '拦截接口返回 500 并 reload 后，可见文本仅 ' + chars + ' 字符' + (hasError ? '（检出错误提示字样，降级人工确认）' : ''),
+        'P1', hasError ? 0.5 : 0.8, hasError ? 'pending' : 'confirmed', 'failure-white-screen',
+        { visibleChars: chars, hasErrorHint: !!hasError }));
     }
     if (skeleton > 0) {
       out.push(finding('7.33',

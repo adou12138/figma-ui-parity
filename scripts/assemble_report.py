@@ -61,10 +61,23 @@ def _findings_list(payload) -> list:
 
 
 def collect_style_diffs(path: Path, evidence: dict) -> None:
-    """compare_fields 产物：status 是 confirmed/withinTolerance/notComparable，需映射。"""
+    """compare_fields 产物：status 是 confirmed/withinTolerance/notComparable，需映射。
+
+    【F1 端到端断裂修复】compare_fields 顶层键是 ``styleDiffs``（列表形）与
+    ``defects``（confirmed 子集），旧代码只读 ``.get("diffs")`` → 恒为 None 直接
+    return，**整个样式层（7.1/7.8）的 confirmed 缺陷从不映射成 fail**，对应维度
+    退化为 notRun 且门禁照过——核心能力形同虚设。此处按真实键名读取。
+    """
     payload = _read_json(path)
-    diffs = payload if isinstance(payload, list) else (payload or {}).get("diffs") \
-        if isinstance(payload, dict) else []
+    diffs = []
+    if isinstance(payload, list):
+        diffs = payload
+    elif isinstance(payload, dict):
+        for key in ("styleDiffs", "diffs"):
+            val = payload.get(key)
+            if isinstance(val, list):
+                diffs = val
+                break
     if not isinstance(diffs, list):
         return
     for d in diffs:
@@ -150,6 +163,14 @@ def summarize(dim_evidence: list) -> dict:
                if e["status"] in SEVERITY_ORDER else len(SEVERITY_ORDER))
     entry = {"status": best["status"]}
     reason = best.get("reason")
+    # 【F24 配套】coverage_gate 对 notRun/dataMissing 强制要求 reason，缺了以 5 退出。
+    # 样式层 notComparable 证据天然没有 reason 字段——在此兜底补一条可回答
+    # 「为什么没跑成」的原因，避免修好 F1 后门禁反而假失败。
+    if not reason and best["status"] in NOT_EXECUTED:
+        reason = {
+            "dataMissing": "证据存在但不可比对（notComparable：视口/配对/数据缺失），无法给出判定",
+            "notRun": "该维度的驱动产物未产生任何证据",
+        }.get(best["status"], "无证据（原因未由产物给出）")
     if reason:
         entry["reason"] = reason
     sources = sorted({e["source"] for e in dim_evidence})
