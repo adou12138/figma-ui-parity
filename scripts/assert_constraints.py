@@ -67,7 +67,12 @@ def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tup
         return rel <= PROPORTION_TOLERANCE, round(before, 4), round(now, 4)
     if rule == "FIXED":
         return abs(length - base_len) <= POSITION_TOLERANCE, base_len, length
-    return True, None, None
+    # 【审查修复】未识别的 rule 不得静默判通过。此前这里是 `return True, None, None`，
+    # 而上面 F46c 刚把「缺坐标」改成返回 None 让调用方计入 skippedNodes——同一个函数里
+    # 两套纪律。Figma 的约束枚举含 MIN / MAX / STRETCH，它们全部落在这个兜底分支上：
+    # 元素被拉伸到 3 倍也照样 ok=True，且调用方 checked += 1 会把它们计入已执行断言数，
+    # 「没测」被伪装成「通过」。此处与 F46c 保持一致：返回 None 交调用方记 skipped。
+    return None, None, None
 
 
 def main() -> int:

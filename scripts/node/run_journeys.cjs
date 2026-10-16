@@ -213,12 +213,35 @@ function stepFinding(step) {
 
 const WS = new RegExp('[' + String.fromCharCode(32, 9, 10, 13, 12, 11, 0xA0, 0x3000) + ']+', 'g');
 
+/* 【审查修复】必须回传 hooksInstalled / interactionsObserved / collectError。
+ * 原实现只 `return parsed.findings || []`，把另外三个字段全丢了——而
+ * runtime_observability.js 的注释明写「调用方据 hooksInstalled=false 填 notRun」，
+ * 实际这里一次都没读过（0 处消费），F11 链路根本没闭合。
+ * 更糟的是 catch 分支 `return []`：evaluate 在导航中/上下文销毁时抛错，返回 []
+ * 与「页面干净」不可区分，上层 `stepFindings.length || landedRuntime.length ? ... : 'pass'`
+ * 于是把「压根没观测到」判成 pass —— 正是 F11 声称要根治的假通过。 */
 async function collectRuntime(page) {
   try {
     const raw = await page.evaluate(OBS_SRC);
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    return (parsed && parsed.findings) || [];
-  } catch (e) { return []; }
+    return {
+      findings: (parsed && parsed.findings) || [],
+      hooksInstalled: !!(parsed && parsed.hooksInstalled),
+      interactionsObserved: (parsed && parsed.interactionsObserved) || 0,
+      collectError: null,
+    };
+  } catch (e) {
+    return {
+      findings: [], hooksInstalled: false, interactionsObserved: 0,
+      collectError: String((e && e.message) || e).slice(0, 200),
+    };
+  }
+}
+
+/* 该轮运行期观测是否有效：钩子没装上 / 一次交互都没观测到 / 采集抛错，
+ * 任一成立都意味着 7.35–7.38 这几个维度**根本没测到**，不能判 pass。 */
+function runtimeValid(rt) {
+  return !!(rt && rt.hooksInstalled && !rt.collectError && rt.interactionsObserved > 0);
 }
 
 async function pageState(page) {
@@ -446,7 +469,8 @@ async function main() {
       }
 
       const startState = await pageState(page);
-      const runtimeFindings = await collectRuntime(page);
+      const runtime = await collectRuntime(page);
+      const runtimeFindings = runtime.findings;
       // 基准用**页面实际 URL**而不是 node.url：发生重定向（/page → /page?tab=2）时，
       // 按 node.url 解析相对链接会得到错误的绝对地址。
       const links = node.hops < MAX_HOPS ? await extractLinks(page, startState.url, skippedLinks) : [];
@@ -461,13 +485,23 @@ async function main() {
         // 点击导航不递增 → MAX_VISITS 检查永不触发（30 上限实际可跑 ~400 次导航）。
         if (step.clicked && !step.noop) visits += 1;
         // 落地页的运行期观测（7.35–7.38 归其自身维度）
-        const landedRuntime = step.noop ? [] : await collectRuntime(page);
+        const landed = step.noop
+          ? { findings: [], hooksInstalled: false, interactionsObserved: 0, collectError: 'noop-未导航' }
+          : await collectRuntime(page);
+        const landedRuntime = landed.findings;
+        const landedValid = runtimeValid(landed);
         steps.push({
           href: link.href, text: link.text, fromUrl: step.fromUrl, url: step.url,
           docStatus: step.docStatus, landedChars: step.landedChars,
+          // 【审查修复】采集无效（钩子未装/无交互/抛错）时不得判 pass——判 pending 交人工，
+          // 同时把三个观测字段写进产物留痕。pending 在门禁 EXECUTED 词表内，不影响覆盖率口径。
           status: stepFindings.some(f => f.status === 'confirmed') ? 'fail'
-            : (stepFindings.length || landedRuntime.length ? 'pending' : 'pass'),
+            : (!landedValid ? 'pending'
+              : (stepFindings.length || landedRuntime.length ? 'pending' : 'pass')),
           findings: stepFindings, runtimeFindings: landedRuntime,
+          runtimeInstalled: landed.hooksInstalled,
+          runtimeObserved: landed.interactionsObserved,
+          runtimeCollectError: landed.collectError,
         });
         stepFindings.forEach(f => allFindings.push(f));
         landedRuntime.forEach(f => allFindings.push(f));

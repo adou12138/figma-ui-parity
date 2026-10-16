@@ -578,8 +578,13 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
                  style_only=False) -> list:
     # style_only：容器盒配对（F18 box-credit）专用——包装盒的几何尺寸随页面结构变化，
     # 与设计 frame 的 rect 天然不可比，直接比会刷一批 confirmed 假缺陷。只放开样式层。
-    geom_only_reason = ("容器盒配对（box-credit）只比对样式层：包装盒的位置/尺寸随页面结构变化，"
-                       "不据此判缺陷（设计容器自身的几何请用 --mapping 显式配对）")
+    # 【审查修复】此专属原因**只在 style_only 时存在**：原写法无条件构造出非空常量，
+    # 下面的 `geom_only_reason or incomparable_reason` 于是恒取前者 → incomparable_reason
+    # 形参彻底失效，视口不一致这类真实原因被错标成「box-credit 只比对样式层」。
+    # 更糟的是同一份 JSON 的 comparability.reason 存的仍是真值，报告内自相矛盾。
+    geom_only_reason = (None if not style_only else
+                        "容器盒配对（box-credit）只比对样式层：包装盒的位置/尺寸随页面结构变化，"
+                        "不据此判缺陷（设计容器自身的几何请用 --mapping 显式配对）")
     diffs = []
     element = {
         "selector": item.get("sel") or item.get("selector"),
@@ -711,7 +716,14 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     p_border = _first_px(item.get("border"))
     if isinstance(d_strokes, list) and d_strokes and p_border is not None:
         s0 = d_strokes[0] if isinstance(d_strokes[0], dict) else {}
-        d_bw = _num(s0.get("strokeWeight", s0.get("weight")))
+        # 【审查修复】跨模块契约断裂：producer（extract_design_fields.stroke）写的键是
+        # weightPx / cssBorderPx，这里却读 strokeWeight / weight —— 三个键一个都不存在，
+        # _num(None) 直接跳过，**边框宽度变化永远不产 diff**（历史高发缺陷静默漏测）。
+        # 口径：用 F16 专门算好的 cssBorderPx（CENTER 描边页面 CSS 只画 1/2，用 weightPx
+        # 会让所有 CENTER 描边按钮恒判超差 = 假缺陷）；缺失时回退 weightPx，再兼容历史键。
+        d_bw = _num(s0.get("cssBorderPx"))
+        if d_bw is None:
+            d_bw = _num(s0.get("weightPx", s0.get("strokeWeight", s0.get("weight"))))
         if d_bw is not None:
             emit("border", "borderWidth", round2(d_bw), round2(p_border),
                  abs(d_bw - p_border), "border_px")
@@ -720,7 +732,8 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     p_shadow = _shadow_blur_offset(item.get("boxShadow"))
     if isinstance(d_effects, list) and d_effects and p_shadow is not None:
         e0 = d_effects[0] if isinstance(d_effects[0], dict) else {}
-        d_blur = _num(e0.get("radius"))
+        # 同上：producer 写的是 blur，这里读 radius —— 键名对不上导致阴影模糊恒不比对。
+        d_blur = _num(e0.get("blur", e0.get("radius")))
         if d_blur is not None:
             emit("shadow", "boxShadowBlur", round2(d_blur), round2(p_shadow[0]),
                  abs(d_blur - p_shadow[0]), "shadow_blur_px")

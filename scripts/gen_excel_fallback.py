@@ -103,8 +103,13 @@ def rows_from_report(report: dict):
             if val:
                 break  # 取到第一路列表缺陷即止，避免同源数据重复计行
     # dict 形 diffs{high,medium,low}（历史报告形状）
+    # 【审查修复】上方列表形分支已把 diffs 当 list 消费过（normalize_evidence 产的正是
+    # {"diffs": [...]}），此处若不判形状，list.get() 会抛 AttributeError 整份表格生成失败。
+    _diffs_dict = report.get("diffs")
+    if not isinstance(_diffs_dict, dict):
+        _diffs_dict = {}
     for level in ("high", "medium", "low"):
-        for d in report.get("diffs", {}).get(level, []):
+        for d in _diffs_dict.get(level, []):
             rows.append({
                 "等级": {"high": "高", "medium": "中", "low": "低"}[level],
                 "缺陷类型": d.get("category", d.get("type", "视觉样式")),

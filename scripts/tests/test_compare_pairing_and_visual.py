@@ -137,10 +137,6 @@ class F19ColorFormatTests(unittest.TestCase):
         CF._UNPARSED_COLORS.clear()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class F17PendingReachesReportTests(unittest.TestCase):
     """F17 的降级产物必须能走到报告——否则「降级」等于「静默消失」。"""
 
@@ -225,6 +221,26 @@ class F18BoxCreditStyleOnlyTests(unittest.TestCase):
                          "等大元素被当成包装盒配对")
         self.assertEqual([n.get("id") for n in indirect], ["p1"], "配不上应记 pending")
 
+    def test_non_box_credit_keeps_its_own_reason(self):
+        """【反向断言】box-credit 的专属原因不得污染其它场景。
+
+        这是 geom_only_reason 那个 bug 溜过去的直接原因：原实现把专属文案无条件构造，
+        `geom_only_reason or incomparable_reason` 于是恒取前者，视口不一致这类真实原因
+        被错标成「box-credit 只比对样式层」——且同一份 JSON 的 comparability.reason
+        存的仍是真值，报告内自相矛盾。
+        """
+        viewport_reason = "页面视口宽 375 与设计稿宽 1440 不一致（比例 0.26），尺寸与位置不可直接比对"
+        item = {"sel": ".wrap", "rect": {"x": 0, "y": 0, "w": 300, "h": 120}}
+        diffs = CF.compare_pair(self.NODE, item, "https://p/", "default", "mobile",
+                                comparable=False, incomparable_reason=viewport_reason,
+                                style_only=False)
+        rect = [d for d in diffs if d["category"].endswith("|rect")]
+        self.assertTrue(rect, "几何断言应产出（只是不可比）：%r" % [(d["property"], d["status"]) for d in diffs])
+        self.assertEqual(rect[0]["status"], "notComparable")
+        self.assertEqual(rect[0]["notComparableReason"], viewport_reason,
+                         "非 box-credit 场景必须保留自己的原因，不得被专属文案覆盖")
+        self.assertNotIn("box-credit", rect[0]["notComparableReason"] or "")
+
 
 class F19DegenerateColorTests(unittest.TestCase):
     """分量不足的颜色写法必须返回 None，不得返回畸形列表（下游 delta_e 会崩）。"""
@@ -237,3 +253,11 @@ class F19DegenerateColorTests(unittest.TestCase):
         self.assertEqual(CF.parse_rgb("rgb(1,2,3)"), [1, 2, 3])
         self.assertEqual(CF.parse_rgb("hsl(120,50%,50%)"), [64, 191, 64])
         self.assertEqual(CF.parse_rgb("#abc"), [170, 187, 204])
+
+
+# 【审查修复】守卫必须在**文件末尾**。此前它位于第 140 行，其后还定义了 3 个测试类，
+# 于是 `python test_compare_pairing_and_visual.py` 只跑到 11 条（discover 才是 17 条）——
+# 本文件新增的 6 条回归锁在直接运行下一条都不执行，却照常输出 OK。
+
+if __name__ == "__main__":
+    unittest.main()

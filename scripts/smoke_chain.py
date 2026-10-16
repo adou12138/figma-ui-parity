@@ -310,13 +310,19 @@ def main() -> int:
     # ---- S5 管线级行为端到端（真端到端升级）----
     if node_exe:
         # F2：只重出报告用法（--report 不带 --design-json/--page-json）不得 UnboundLocalError
+        # 【审查修复】此前用 node_exe 跑这个 .py —— node 直接 SyntaxError 退出 rc=1，
+        # 而断言写的是 `returncode in (0, 1, 2)`，恰好把 1 算作合法 ⇒ F2 修没修都绿（恒真）。
+        # 改用 py；断言改为「不崩」这一性质本身：门禁 abort 时返回非零是**预期行为**，
+        # 不能断言 rc==0；而 UnboundLocalError / Traceback 才是 F2 回归的确凿标志。
         tmp2 = Path(tempfile.mkdtemp(prefix="smoke_chain_f2_"))
         try:
             (tmp2 / "r.json").write_text(json.dumps({"defects": [], "url": "https://p.test/"}), encoding="utf-8")
-            r = run([node_exe, S / "run_parity_pipeline.py", "--report", tmp2 / "r.json",
+            r = run([py, S / "run_parity_pipeline.py", "--report", tmp2 / "r.json",
                      "--workdir", tmp2 / "wd", "--outdir", tmp2 / "out", "--no-patterns"])
-            ck.check("F2 只重出报告用法不崩（pool UnboundLocal 修复）", r.returncode in (0, 1, 2),
-                     "rc={} err={}".format(r.returncode, (r.stderr or "")[-200:]))
+            _err = r.stderr or ""
+            ck.check("F2 只重出报告用法不崩（pool UnboundLocal 修复）",
+                     ("UnboundLocalError" not in _err) and ("Traceback" not in _err),
+                     "rc={} err={}".format(r.returncode, _err[-300:]))
         finally:
             shutil.rmtree(tmp2, ignore_errors=True)
 
