@@ -25,27 +25,35 @@ def extract_items(data) -> tuple:
 
 
 def fingerprint(item):
-    """缺陷指纹。
+    """缺陷指纹（结构化口径，**不含任何自然语言描述**）。
 
     【F8 证据蒸发修复】旧指纹 = page+scenario+selector+nth+category+viewport，
-    不含 dimension/property/symptom——而旅程/状态类 findings 多为 element:null、
+    不含 dimension/property——旅程/状态类 findings 多为 element:null、
     无 page/scenario/category（只写 dimension+property），实测 3 条不同的 7.39
     缺陷（doc-error / noop / back-broken）被塌缩成 1 条，整页旅程缺陷在归一阶段
-    蒸发。指纹补入 dimension|property|symptom 前缀|raw.url；对「真重复」的合并
-    语义不变（保留策略在 main：合并 evidence，不丢弃）。
+    蒸发。故补入 dimension|property|raw.url。
+
+    【措辞漂移修复】中途又把 symptom[:48] 塞进了指纹——措辞差一个空格的**同一**缺陷
+    指纹就不同，真重复漏合并（实测同批 3 条近重复 deduplicated=0），且与本函数
+    docstring 声称的「对『真重复』的合并语义不变」自相矛盾。指纹的职责是「是不是
+    同一个缺陷」，而 symptom 是同一缺陷的自由措辞：把它计入指纹等于要求复述逐字
+    一致。故 symptom 彻底移出指纹；同一元素的同维度/同属性缺陷靠 evidence 合并，
+    不同措辞不再分裂成多条。raw.url 保留：不同来源 URL 确属不同缺陷。
     """
     e = item.get("element", {}) if isinstance(item.get("element"), dict) else {}
     raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
-    symptom = str(item.get("symptom", ""))
     parts = [
         str(item.get("page", "")), str(item.get("scenario", "")),
         str(e.get("selector", "")), str(e.get("nth", "")),
         str(item.get("category", "")), str(item.get("viewport", "")),
-        # 以下为 F8 新增维度：同一元素上不同维度/不同症状/不同来源 URL 是不同缺陷
+        # F8 新增：同一元素上不同 dimension/property 是不同缺陷
         str(item.get("dimension", "")),
         str(item.get("property", "")),
-        symptom[:48],
-        str(raw.get("url", "")),
+        # 指纹标识符（由 producer 提供的稳定 id，不含自然语言描述）
+        str(item.get("id", "")),
+        str(e.get("anchor", "")),
+        str(raw.get("url", "")), str(raw.get("signature", "")),
+        str(raw.get("method", "")), str(raw.get("status", "")),
     ]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 

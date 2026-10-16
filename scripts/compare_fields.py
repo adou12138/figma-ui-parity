@@ -479,7 +479,14 @@ def match(design_nodes: list, items: list, mapping: dict, parent_of: dict | None
         paired_snapshot = list(pairs)
         for node in unmatched:
             if str(node.get("id") or "") in credited_parents and not node.get("text"):
-                cand = _unique_containing_box(node, paired_snapshot, parent_of, index, used)
+                # 【审查修复】box-credit 不独占承载盒，传 used 的快照而非原对象：
+                # take() 会 `used.add(id(target))`，而 _unique_containing_box 用
+                # `if id(cand) in used: continue` 过滤 —— 于是多个设计父容器共用同一个
+                # 页面容器盒时变成「先到先得」：第二个父容器找不到候选 → 记 pending，
+                # 样式**永久漏测**，且结论依赖 unmatched 的顺序（换份契约顺序结论就变，
+                # 无法复现也无法排查）。共享本就是合理语义——它们描述的是同一块区域的样式。
+                _used_snapshot = set(used)
+                cand = _unique_containing_box(node, paired_snapshot, parent_of, index, _used_snapshot)
                 if cand is not None:
                     take(node, cand, pair_role="box-credit", confidence="geometry-contained")
                 else:
@@ -747,13 +754,24 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     if d_text.get("characters") and (p_text.get("text") or "").strip():
         if d_text["characters"].strip() != (p_text.get("text") or "").strip():
             # 【F14】文案比对不受视口宽度影响——恒可比
+            # 【审查修复】本分支手写 diffs.append、不走 emit()，于是 F17 的低置信降级管不到它：
+            # 中文节点名（最常见的 Figma 命名）走的正是 name-substring 低置信路径，却仍被判
+            # confirmed——配错对象时文案差是**错对象之间的差**，会刷假缺陷。
+            # 【F14 口径澄清】文案属样式层，不受视口缩放影响，恒可比是对的，
+            # 与 STYLES_ONLY 的其它类别一致；与 SKILL.md:142「所有属性统一 notComparable」
+            # 的旧措辞冲突已在 F14 处单独裁决，不在本分支处理。
+            _st7_8 = "confirmed"
+            if pair_confidence == "name-substring":
+                _st7_8 = "pending"
             diffs.append({
                 "page": page_url, "scenario": scenario, "viewport": viewport,
                 "category": "7.8|text", "dimension": "7.8", "property": "characters",
                 "expected": fmt_val(d_text["characters"]), "actual": fmt_val(p_text.get("text")),
                 "delta": None, "tolerance": None,
-                "status": "confirmed",
+                "status": _st7_8,
                 "notComparableReason": None,
+                # 其余 diff 都带这两个字段，缺了会让下游按置信度分类/排查时对 7.8 失效
+                "pairConfidence": pair_confidence,
                 "severity": "P1", "confidence": 0.9,
                 "reproduction": [
                     "打开 {} 并定位元素 {}".format(page_url or "页面", anchor),

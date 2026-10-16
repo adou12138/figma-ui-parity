@@ -64,6 +64,14 @@ def validate(value, schema: dict, path: str, errors: list, strict: bool) -> None
 
 
 def collect(report: dict) -> list:
+    """收集待校验的缺陷条目。
+
+    【F25 修复】compare_fields.py 的产物键是 `styleDiffs`，旧 collect 只认
+    defects/defectList/issues——生产方与校验器对「缺陷在哪」认知不一致：styleDiffs 里
+    status=confirmed 的差异完全没被校验，且顶层无 defects 键时严格模式直接 rc=6。
+    现把 styleDiffs 纳入候选键，并且**只收 status == "confirmed" 的条目**，
+    避免把 withinTolerance / pending 的容差内差异当缺陷校验。
+    """
     out = []
     for key in ("defects", "defectList", "issues"):
         value = report.get(key)
@@ -72,6 +80,17 @@ def collect(report: dict) -> list:
                 if isinstance(item, dict):
                     out.append(("{}[{}]".format(key, index), item))
             break
+    # styleDiffs 与上面三个键并存时全部收集（compare_fields 同时输出多类差异）。
+    style_diffs = report.get("styleDiffs")
+    if isinstance(style_diffs, list):
+        for index, item in enumerate(style_diffs):
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") != "confirmed":
+                continue
+            item = dict(item)
+            item.setdefault("status", "confirmed")
+            out.append(("styleDiffs[{}]".format(index), item))
     for key in ("pendingChecks", "pending"):
         value = report.get(key)
         if isinstance(value, list):
@@ -114,19 +133,30 @@ def main() -> int:
     # 【F25 反静默假通过】严格模式下要求 report **显式存在**缺陷数组键（允许空数组
     # 但键必须在）：「忘了填缺陷数组」与「真零缺陷」产出完全相同的 exit 0——前者是
     # 最常见的静默假通过形态，配合报告出口的形状分歧曾形成完整假通过链。
+    # 键集合与 collect() 保持一致（含 styleDiffs），否则「产物只有 styleDiffs」
+    # 会因顶层无 defects 键被判 rc=6，与 collect 刚纳入的 styleDiffs 自相矛盾。
     if args.strict and not any(
-            isinstance(report.get(k), list) for k in ("defects", "defectList", "issues")):
-        errors.append("严格模式：report 缺少显式缺陷数组键（defects/defectList/issues 任一，"
+            isinstance(report.get(k), list)
+            for k in ("defects", "defectList", "issues", "styleDiffs")):
+        errors.append("严格模式：report 缺少显式缺陷数组键（defects/defectList/issues/styleDiffs 任一，"
                       "允许空数组但键必须存在）——「忘填」与「真零缺陷」必须可区分")
 
     result = {"checked": len(entries), "errors": len(errors), "strict": args.strict,
               "dimensionsCovered": sorted({str(d.get("dimension")) for _, d in entries if d.get("dimension")})}
-    if args.write and not errors and isinstance(report.get("meta"), dict):
-        report["meta"]["defectValidation"] = result
-        args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    elif args.write and errors:
-        # 【F25 配套】校验失败时不写回——help 承诺「通过时写回」，旧行为失败也写。
-        print("--write 已跳过：校验失败时不写回报告", file=sys.stderr)
+    if args.write:
+        if errors:
+            # 【F25 配套】校验失败时不写回——help 承诺「通过时写回」，旧行为失败也写。
+            print("--write 已跳过：校验失败时不写回报告", file=sys.stderr)
+        elif isinstance(report.get("meta"), dict):
+            report["meta"]["defectValidation"] = result
+            args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            # 【反静默修复】旧行为：报告无 meta 键时 --write 什么都不做，却 rc=0、
+            # 无 stderr、meta.defectValidation 也没写进去——「写回」是调用方
+            # （报告出口）判定校验已落地的唯一凭据，静默无操作等于假成功。
+            # 现在显式建 meta 写进去，不让调用方误判。
+            report["meta"] = {"defectValidation": result}
+            args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     if errors:
         print(json.dumps(result, ensure_ascii=False, indent=2))

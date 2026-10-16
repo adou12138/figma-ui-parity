@@ -32,7 +32,11 @@
     let s = String(text == null ? '' : text);
     if (!s) return s;
     // ① urlencoded / 表单形态：password=xxx&token=yyy（值取到 & 或结尾）
-    s = s.replace(/([?&]?)([A-Za-z0-9_\-]*?(?:password|passwd|pwd|token|secret|apikey|api_key|access_key|credential|authorization|session)[A-Za-z0-9_\-]*)(=)([^&\s]*)/gi,
+// 【审查修复】值字符集补上分号排除：原先 `[^&\s]*` 会把分号一起吃掉，
+    // 于是「sessionid=zzz; theme=dark」变成「sessionid=[REDACTED] theme=dark」——
+    // 分号消失后，同一 Cookie 头里的后续项被并进已打码的值里而整段丢失。
+    // urlencoded 与 Cookie 都以 & / ; 作分隔符，排除它才是正确边界。
+    s = s.replace(/([?&]?)([A-Za-z0-9_\-]*?(?:password|passwd|pwd|token|secret|apikey|api_key|access_key|credential|authorization|session)[A-Za-z0-9_\-]*)(=)([^&;\s]*)/gi,
       (m, pre, key, eq) => pre + key + eq + '[REDACTED]');
     // ② JSON 形态："password":"xxx" / 'token': 'yyy'
     s = s.replace(/(["'])(?:(?!\1)[^\\])*?(?:password|passwd|pwd|token|secret|apikey|api_key|access_key|credential|authorization|session)(?:(?!\1)[^\\])*?\1(\s*:\s*)(["'])(?:(?!\3).)*?\3/gi,
@@ -40,6 +44,23 @@
     // ③ Bearer / Basic 请求头形态
     s = s.replace(/(Bearer\s+)[A-Za-z0-9._\-]+/gi, '$1[REDACTED]');
     s = s.replace(/(Basic\s+)[A-Za-z0-9+/=]+/gi, '$1[REDACTED]');
+    // 【审查修复】④ Cookie / Set-Cookie 请求头形态——此前完全不在覆盖范围内。
+    // 形如「Cookie: SID=abcdef123456; sessionid=zzz; theme=dark」里的会话凭据会**明文**
+    // 进 findings.raw 并一路流到 report.json / CSV / xlsx，直接违反 SKILL.md 红线
+    // 「产物不得写入 token / Cookie」。按 ; 拆分逐项判定：无害偏好（theme）保留，
+    // 凭据类键名打码。键名判定复用 SENSITIVE_KEY，另加 sid/csrf/xsrf 这类
+    // 不在通用词表里的会话键前缀族（注意前缀族里不能出现连字符相邻的星号）。
+    const cookieSecret = (k) => SENSITIVE_KEY.test(k)
+      || /^(?:sid|phpsessid|jsessionid|sessionid|csrf[\w-]+|xsrf[\w-]+)$/i.test(k);
+    s = s.replace(/((?:^|[\s;])(?:cookie|set-cookie)\s*:\s*)([^\r\n]+)/gi,
+      (m, pre, val) => pre + val.split(';').map(part => {
+        const eq = part.indexOf('=');
+        if (eq < 0) return part;
+        const k = part.slice(0, eq);
+        // 只替换等号之后的值，保留键名与分隔符——若整段替换，值里残留的其它片段
+        // （例如规则 ① 已打码但未切分的尾巴）会被一起丢掉。
+        return cookieSecret(k.trim()) ? part.slice(0, eq + 1) + '[REDACTED]' : part;
+      }).join(';'));
     return s;
   };
   const redactUrl = (u) => {

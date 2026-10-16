@@ -376,14 +376,24 @@ async function clickLink(page, link) {
 /** 【F12】运行期缺陷去重键：维度 + 属性 + 页面 + raw 区分字段。
  *
  *  旧键只有 dimension|property|(raw.url||raw.backUrl)——7.35/7.36/7.37/7.38 的 raw
- *  没有 url，于是同维度下**不同的**缺陷被折叠成 1 条（同页两个不同的 JS 错误只报一条）。
- *  按四类 raw 形状分别取区分字段，有几种拼几种。 */
+ *  没有 url，于是同维度下**不同的**缺陷被折叠成1 条（同页两个不同的 JS 错误只报一条）。
+ *  按四类 raw 形状分别取区分字段，有几种拼几种。
+ *
+ *  【截断过短修复】7.35 的 text 原来只取前 80 字符，而 producer 存的是 300 字符
+ *  ——长堆栈 / 含长 URL 的错误消息前 80 字极易相同，不同缺陷被折叠成1 条、
+ *  occurrences 虚增，与F12 的修复意图正好相反。改为「首 80 + 总长度 + 尾 40」组合键：
+ *  头部保留可读前缀、长度区分长度不同者、尾部保留 URL/结尾堆栈帧这类真正的差异位。 */
 function dedupeKey(f) {
   const r0 = f.raw || {};
+  let textKey = '';
+  if (r0.kind && r0.text != null) {
+    const t = String(r0.text);
+    textKey = t.length <= 80 ? t : t.slice(0, 80) + '#' + t.length + '#' + t.slice(-40);
+  }
   const disc = [
     r0.signature,
     r0.target,
-    r0.kind ? r0.kind + ':' + String(r0.text || '').slice(0, 80) : '',
+    r0.kind ? r0.kind + ':' + textKey : '',
     (r0.method && r0.status != null) ? r0.method + ':' + r0.status : '',
   ].filter(Boolean).join('#');
   return [f.dimension, f.property || '', r0.url || r0.backUrl || '', disc].join('|');

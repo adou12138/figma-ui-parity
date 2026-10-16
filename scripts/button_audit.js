@@ -87,10 +87,22 @@
   }
 
   // 【F30】风险词表单源化：与 scripts/node/risk_words.cjs 的 DANGER_WORDS 同源
-  // （此前纯中文，英文 Delete/Remove/Reset 按钮落 safe 被真点——安全问题）。
+  // （此前纯中文，英文 Delete/Remove 按钮落 safe 被真点——安全问题）。
   // 词表改动须同步 risk_words.cjs 与 discover_scenarios.py，parity 测试守住。
-  const RE_DANGER = /删除|移除|移出|清空|退出|注销|停用|禁用|解散|撤销|解绑|退款|支付|结算|批量删|下线|作废|销毁|重置|delete|remove|logout|signout|sign-out|unbind|destroy|drop|purge|terminate|reset/i;
-  const RE_CAUTION = /保存|提交|确定|确认|创建|新建|添加|新增|导入|上传|发送|同步|发布|启用|开启|绑定|购买|续费|修改|编辑|更新|应用|分配|授权|合并|移动|转移|设为|重置/;
+  //
+  // 【F30 词边界修复】英文危险词此前用**裸子串**匹配：F30 新增的 `drop` 让
+  // Dropdown / dropdown / Drag and drop / Drop files here 全被判 danger，这些按钮在
+  // safe 策略下永不被点击——7.23 的覆盖被静默丢失（不报错、不留痕，只是少跑一堆用例）。
+  // 现给英文危险词加 `\b` 词边界，只在「整词即危险动作」时才判 danger。
+  // 注意 `sign-out` 含连字符：\b 在连字符两侧成立，故与 signout 等价，无需特判。
+  // `drop` 额外加 `(?!-)`：`\b` 在连字符处成立，光靠 \b 仍会把 drop-down 这类
+  // 复合词判成 danger（与 Dropdown 同族的误伤）。drop 单独列出以挂这个后视否定。
+  const RE_DANGER = /删除|移除|移出|清空|退出|注销|停用|禁用|解散|撤销|解绑|退款|支付|结算|批量删|下线|作废|销毁|\b(delete|remove|logout|signout|sign-out|unbind|destroy|purge|terminate)\b|\bdrop\b(?!-)/i;
+  // 【F30 caution 归位修复】`reset`/「重置」此前同时出现在 RE_DANGER 与 RE_CAUTION，
+  // 而 riskOf 先判 danger —— 「重置」表单按钮被判 danger，在 safe 策略下被拒绝点击。
+  // 「重置」不丢数据（表单回默认值，可逆），归 caution 才是正解：从 RE_DANGER 移除
+  // 重置与 \breset\b（消除与 CAUTION 的重复），保留在 RE_CAUTION 里按caution 处理。
+  const RE_CAUTION = /保存|提交|确定|确认|创建|新建|添加|新增|导入|上传|发送|同步|发布|启用|开启|绑定|购买|续费|修改|编辑|更新|应用|分配|授权|合并|移动|转移|设为|重置|\breset\b/i;
   function riskOf(label) {
     const t = norm(label);
     if (!t) return 'caution';                             // 无文本图标按钮：不知是关闭还是删除 → 保守

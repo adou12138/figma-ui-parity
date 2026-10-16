@@ -257,6 +257,9 @@ if (require.main === module) (async () => {
 
   // ---- 观测通道：dialog / 新标签页 / 下载 / 请求 ----
   const obs = { dialogs: [], newPages: [], downloads: [], requests: [], intercepted: [] };
+  // 【F6 上游留痕】本轮发生的降级事实。stabilize 的显式抛错（视口内图片未加载）
+  // 若被静默吞掉，产物看不出截图是在破图占位状态下拍的——下游无从判断可比性。
+  const degraded = [];
   page.on('dialog', d => { obs.dialogs.push({ type: d.type(), message: d.message().slice(0, 80) }); d.dismiss().catch(() => {}); });
   page.on('download', d => { obs.downloads.push(d.suggestedFilename()); d.cancel().catch(() => {}); });
   context.on('page', p => { if (p !== page) { obs.newPages.push(p.url()); p.close().catch(() => {}); } });
@@ -287,7 +290,22 @@ if (require.main === module) (async () => {
       if (await isLoginPage(page)) { await context.close(); process.exit(2); }
       await load(); return;
     }
-    try { await stabilize(page, {}); } catch (e) {}
+    // 【F6 上游留痕】stabilize.js 的懒加载重校验会**显式抛错**（视口内图片未加载），
+    // 该异常以 `[stabilize]` 前缀区分自有异常。旧代码 `catch (e) {}` 把这个显式抛错
+    // 完整丢弃：无 stderr、无降级标记——上游精心区分的异常语义在边界处被抹平，
+    // 下游只看到「跑完了」，无法知道截图是在破图占位状态下拍的。现留痕 + 标降级。
+    try {
+      await stabilize(page, {});
+    } catch (e) {
+      const msg = String((e && e.message) || e).slice(0, 200);
+      if (String(msg).indexOf('[stabilize]') !== -1) {
+        console.warn('[warn] stabilize 显式抛错（视口内图片未加载），本轮截图降级：' + msg);
+        degraded.push({ stage: 'stabilize', reason: 'explicit-throw', message: msg });
+      } else {
+        console.warn('[warn] stabilize 异常（继续执行）：' + msg);
+        degraded.push({ stage: 'stabilize', reason: 'error', message: msg });
+      }
+    }
   };
   await load();
   if (auth) { try { const si = await auth.saveAuth(context, 'default'); console.log('[i] auth refreshed: ' + si.cookieCount + ' cookies'); } catch (e) {} }
@@ -443,6 +461,9 @@ if (require.main === module) (async () => {
   // ---- 汇总输出 ----
   const res = {
     url: URL_, auditedAt: new Date().toISOString(),
+    // dataQuality 让下游能直接读到「本轮结果是不是降级产物」，不必反推 stderr
+    dataQuality: degraded.length ? 'degraded' : 'ok',
+    degraded,
     count: audit.count, uniqueCount: audit.uniqueCount, hiddenCount: audit.hiddenCount,
     riskSummary: audit.riskSummary, notClickableCount: audit.notClickableCount,
     hidden: audit.hidden,

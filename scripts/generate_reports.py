@@ -13,6 +13,29 @@ import argparse, csv, html, json, sys
 from datetime import datetime
 from pathlib import Path
 
+# 指纹口径单一来源：normalize_evidence.fingerprint。两文件同目录，直接按路径导入，
+# 使 generate_reports 无论从哪个 cwd 启动都能找到（避免只靠 sys.path[0]）。
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from normalize_evidence import fingerprint as evidence_fingerprint
+except ImportError:  # pragma: no cover - 仅在模块缺失时兜底
+    import hashlib
+
+    def evidence_fingerprint(item):
+        """normalize_evidence 不可用时的同口径兜底实现（仍不含自然语言描述）。"""
+        e = item.get("element", {}) if isinstance(item.get("element"), dict) else {}
+        raw = item.get("raw") if isinstance(item.get("raw"), dict) else {}
+        parts = [
+            str(item.get("page", "")), str(item.get("scenario", "")),
+            str(e.get("selector", "")), str(e.get("nth", "")),
+            str(item.get("category", "")), str(item.get("viewport", "")),
+            str(item.get("dimension", "")), str(item.get("property", "")),
+            str(item.get("id", "")), str(e.get("anchor", "")),
+            str(raw.get("url", "")), str(raw.get("signature", "")),
+            str(raw.get("method", "")), str(raw.get("status", "")),
+        ]
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
 DEFECT_KEYS = ("defects", "defectList", "diffs", "issues", "findings")
 SEVERITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 CSV_COLUMNS = ["序号", "等级", "缺陷类型", "功能模块", "问题描述", "解决方案", "元素定位", "备注(附图)"]
@@ -48,16 +71,18 @@ def collect_defects(data) -> list:
 
 
 def dedupe(defects: list) -> tuple:
+    """按 normalize_evidence.fingerprint 的口径去重（单一来源）。
+
+    【口径分叉修复】此函数曾内联一份**旧口径**指纹（page|scenario|selector|nth|
+    dimension/category|viewport，不含 symptom 等），与 normalize_evidence.py 的新口径
+    分叉：同一批缺陷一个判 3 条、一个判 1 条，跨环节对不上账。现改为直接调用
+    normalize_evidence.fingerprint，指纹口径只有一处定义。
+    """
     merged, duplicates = {}, 0
     for item in defects:
         fingerprint = str(item.get("fingerprint") or "")
         if not fingerprint:
-            element = item.get("element") if isinstance(item.get("element"), dict) else {}
-            fingerprint = "|".join([
-                str(item.get("page", "")), str(item.get("scenario", "")),
-                str(element.get("selector", "")), str(element.get("nth", "")),
-                str(item.get("dimension") or item.get("category", "")), str(item.get("viewport", "")),
-            ])
+            fingerprint = evidence_fingerprint(item)
             item["fingerprint"] = fingerprint
         if fingerprint not in merged:
             merged[fingerprint] = dict(item)

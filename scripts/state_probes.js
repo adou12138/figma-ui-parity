@@ -252,7 +252,11 @@
    */
   var mode = window.__vpProbe && window.__vpProbe.mode;
   if (mode !== 'dark' && mode !== 'print' && mode !== 'failure') {
-    module.exports = api;
+    // 【审查修复】这里原先有一行 `module.exports = api;`，必定抛 ReferenceError：
+    // 上方的 `typeof module !== 'undefined'` 分支已把 node 侧导出处理完并 return，
+    // 能走到这里就说明 module 未定义——而这恰恰是 F40 要覆盖的「__vpProbe 跨导航丢失」
+    // 场景。守卫自己先崩，F40 承诺的显式 error JSON 与 detail 字段从未产出过，
+    // 且「真的 mode 丢失」与「evaluate 异常」变得无法区分。
     return JSON.stringify({
       error: 'probe-mode-missing',
       detail: 'window.__vpProbe 未设置或 mode 非法（期望 dark/print/failure，得到 '
