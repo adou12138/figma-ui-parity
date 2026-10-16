@@ -173,11 +173,17 @@ def scenario_coverage_table(cov) -> str:
     multi = cov.get("multipleRecords") or {}
     rate = executed.get("rate")
     rate_txt = "{}%".format(round(rate * 100, 1)) if isinstance(rate, (int, float)) else "—"
+    # 【审查修复·死数据激活】rateIncludingTruncated（截断场景计入分母的保守口径）
+    # 此前产出但无人消费——它的存在意义就是让人看见「截断虚高」。两口径并排展示，
+    # 差距大 = 大量意图场景被截断静默丢弃。
+    rate_trunc = executed.get("rateIncludingTruncated")
+    rate_trunc_txt = "{}%".format(round(rate_trunc * 100, 1)) if isinstance(rate_trunc, (int, float)) else "—"
     parts = [kv_table({
         "计划场景总数": planned.get("total", 0),
         "计入执行率": planned.get("counted", 0),
         "已执行": executed.get("total", 0),
         "执行率": rate_txt,
+        "执行率（含截断，保守）": rate_trunc_txt,
         "未执行": notrun.get("total", 0),
         "截断丢弃": planned.get("truncated", 0),
         "豁免维度": "、".join(planned.get("exemptDimensions") or []) or "无",

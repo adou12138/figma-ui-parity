@@ -37,11 +37,19 @@ test('fullText non-interactive text is NOT evidence (F29)', () => {
 });
 
 test('fullText short design name rejects substring coincidence (F29)', () => {
-  // 短设计名（btn/a）禁子串：页面任意长文本包含它不算命中。
-  const r = pairButtonsWithEvidence([design('确定')], [],
-    [{ text: '我们提供确定性的交付承诺', tag: 'div', selector: '.doc', interactive: true }]);
-  assert.strictEqual(r.missingInPage.length === 1 || r.paired.length === 0,
-    true, '跨词巧合子串不得配对');
+  // 【审查修复·原测试恒真】「确定」2 字符走 k.length<3 短名禁子串分支，且旧断言
+  // 是宽松或——即使恢复双向子串它也绿（'供确定' 非边界）。重写为两条精确锁定：
+  // ① 3+ 字符设计名跨词巧合 → 禁子串生效，missing（锁词边界逻辑）；
+  const r3 = pairButtonsWithEvidence([design('确认订单')], [],
+    [{ text: '我们提供确认订单的承诺', tag: 'div', selector: '.doc', interactive: true }]);
+  // '确认订单' 在长文本里完整出现但前后无边界（'供'/'的'）→ 词边界禁配对
+  assert.strictEqual(r3.missingInPage.length, 1, '3+ 字符跨词巧合必须走词边界拒绝');
+  // ② 2 字符设计名完整出现（词边界满足）→ 仍必须 missing（锁 k.length<3 禁子串；
+  //    修复前双向子串会判 paired——这是 F29 反转点的真正回归锁）
+  const r2 = pairButtonsWithEvidence([design('确定')], [],
+    [{ text: '请点击 确定 按钮继续', tag: 'div', selector: '.doc', interactive: true }]);
+  assert.strictEqual(r2.paired.length, 0, '2 字符短名即使词边界完整也禁 fullText 配对');
+  assert.strictEqual(r2.missingInPage.length, 1);
 });
 
 test('zero-width and whitespace normalize', () => {
