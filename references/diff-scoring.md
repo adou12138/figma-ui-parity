@@ -53,7 +53,10 @@ node scripts/diff_score.js --a last.png --b this.png --out mask.png --threshold 
 ```
 
 - `suppressed.edgeNoise` / `suppressed.isolated`：被抑制的噪点像素数（遮罩里画成**淡黄**，方便一眼看出"这里被降噪了"）；
-- `weakPixels`：差值超过噪点门槛（`threshold × 0.5`）但未过判定线的像素，单列统计**不计入** `changedPixels`——用于区分"差一点点"与"差很多"；
+- `weakPixels` / `weakPercent`：**所有**未过判定线（`0 < 差值 ≤ threshold`）的像素，单列统计**不计入** `changedPixels`——既用于区分"差一点点"与"差很多"，也保证整页轻微变色不被吞掉（旧版把 `≤ threshold × 0.5` 的像素直接跳过，既不 changed 也不 weak：主题色改浅 delta=5 会得到 diffScore=0 的"无变化"）。**基础模式也输出**，不再只在增强模式存在；
+- `meanChannelDelta` / `flatRegionDrift`：全图平均通道差；当**没有像素越过判定线**但平均差 ≥3 时置 `flatRegionDrift: true` 并附 `flatRegionDriftNote`——这是"整页系统性轻微偏移"（主题色/蒙层/gamma）的识别信号，`diffScore` 对此不敏感；
+- `sizeMismatch` / `ignoredRegions`：前者只在显式 `--crop-to-common` 时出现（记录实际比对的最小公共区与未比对说明）；后者是**被屏蔽区域个数**（计一次，不两边相加）；
+- `--dpr-a/--dpr-b` 不一致直接拒比（`dpr mismatch`）；交错（Adam7）PNG 直接报错——按行 unfilter 会静默产错分数；
 - ⚠️ **跨模式比较前先确认基线同模式**：基础模式与增强模式的 `diffScore` 口径不同，混用会得出错误的回归结论。历史基线是在基础模式下建立的，开增强前建议重建基线。
 
 ## 集成到报告
