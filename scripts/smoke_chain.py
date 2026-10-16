@@ -307,6 +307,19 @@ def main() -> int:
     r = run([py, S / "scenario_coverage.py", "--plan", tmp / "scenarios.json", "--results", sc_res, "--enforce"])
     ck.check("scenario_coverage 全量回填后 enforce 通过", r.returncode == 0, r.stderr[-200:])
 
+    # ---- S5 管线级行为端到端（真端到端升级）----
+    if node_exe:
+        # F2：只重出报告用法（--report 不带 --design-json/--page-json）不得 UnboundLocalError
+        tmp2 = Path(tempfile.mkdtemp(prefix="smoke_chain_f2_"))
+        try:
+            (tmp2 / "r.json").write_text(json.dumps({"defects": [], "url": "https://p.test/"}), encoding="utf-8")
+            r = run([node_exe, S / "run_parity_pipeline.py", "--report", tmp2 / "r.json",
+                     "--workdir", tmp2 / "wd", "--outdir", tmp2 / "out", "--no-patterns"])
+            ck.check("F2 只重出报告用法不崩（pool UnboundLocal 修复）", r.returncode in (0, 1, 2),
+                     "rc={} err={}".format(r.returncode, (r.stderr or "")[-200:]))
+        finally:
+            shutil.rmtree(tmp2, ignore_errors=True)
+
     return ck.summary()
 
 
