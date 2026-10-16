@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.30.0
+version: 4.30.1
 author: TestCase
 agent_created: true
 category: ui-testing
