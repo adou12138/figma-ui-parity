@@ -28,6 +28,8 @@ import json
 import sys
 from pathlib import Path
 
+import defect_keys as DK
+
 # 与 coverage_gate.py 的词表严格一致
 EXECUTED = {"pass", "fail", "warn", "pending"}
 NOT_EXECUTED = {"notRun", "dataMissing"}
@@ -58,6 +60,45 @@ def _findings_list(payload) -> list:
         items = payload.get("findings")
         return items if isinstance(items, list) else []
     return payload if isinstance(payload, list) else []
+
+
+def _state_scenario_findings(payload) -> list:
+    """run_state_scenarios 产物的缺陷条目：{results:[{findings:[...]}]}。"""
+    if not isinstance(payload, dict):
+        return []
+    out = []
+    for result in payload.get("results") or []:
+        if not isinstance(result, dict):
+            continue
+        found = result.get("findings")
+        if isinstance(found, list):
+            out.extend(f for f in found if isinstance(f, dict))
+    return out
+
+
+def collect_defects(path: Path, out: list, seen: set) -> int:
+    """把某份产物里 status=confirmed 的缺陷条目并入 report 的 defects 列表（按签名去重）。
+
+    【交付修复】本文件的三个 collect_* 此前只产「维度 → 状态」证据，产物里的**缺陷
+    条目**全部蒸发：7.25 / 7.26 / 7.32 / 7.33 四类状态场景找到的每条缺陷都到不了报告，
+    而它们的 dimension/status 都正常写进了 checks——报告于是呈现「7.32 判定 fail 但
+    缺陷清单 0 条」的自相矛盾，coverage_gate 照过。findings 类产物（extra_checks /
+    runtime_observability / journeys）同理。
+    """
+    payload = _read_json(path)
+    added = 0
+    for item in list(_findings_list(payload)) + _state_scenario_findings(payload):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "") != "confirmed":
+            continue
+        sig = DK.signature(item)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append(item)
+        added += 1
+    return added
 
 
 def collect_style_diffs(path: Path, evidence: dict) -> None:
@@ -213,6 +254,22 @@ def main() -> int:
         collect_state_scenarios(args.state_scenarios, evidence)
     if args.scenario_coverage:
         collect_scenario_coverage(args.scenario_coverage, evidence)
+
+    # 【交付修复】把三份产物里 status=confirmed 的缺陷条目并入 report 的 defects。
+    # 去重集合先纳入 report 顶层已有的各容器键（含 defects/styleDiffs），避免与
+    # generate_reports 的「取第一路非空」策略叠加成重复计数。
+    defects = report.get("defects")
+    if not isinstance(defects, list):
+        defects = []
+        report["defects"] = defects
+    seen = set()
+    for _key, items in DK.iter_containers(report):
+        for item in items:
+            if isinstance(item, dict):
+                seen.add(DK.signature(item))
+    for source in [args.style_diffs] + list(args.findings or []) + [args.state_scenarios]:
+        if source:
+            collect_defects(source, defects, seen)
 
     # 已有手写 checks 原样保留：人填的比机器猜的优先级高
     existing = {}

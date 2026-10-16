@@ -13,6 +13,8 @@ import json
 import sys
 from pathlib import Path
 
+import defect_keys as DK
+
 try:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -79,12 +81,16 @@ def rows_from_report(report: dict):
     【F7 同源修复】旧版只读 dict 形 ``diffs{high,medium,low}``，从不读缺陷列表键
     （defects/defectList/styleDiffs/findings/issues）——与 generate_reports.collect_defects
     （只认列表形）对同一 report.json 各看一半数据：dict 形 → HTML/CSV 有缺陷而
-    Excel 0 条；列表形 → 反过来。现统一：先取列表形缺陷（与 collect_defects 同键序），
-    再补 dict 形 diffs 与 responsive.issues，两出口覆盖并集。
+    Excel 0 条；列表形 → 反过来。现统一：先取列表形缺陷（键表见 defect_keys，与
+    generate_reports 同源），再补 dict 形 diffs 与 responsive.issues，两出口覆盖并集。
+
+    【E2 修复】候选键曾漏 ``styleDiffs``（compare_fields 的主产物键）——带 2 条
+    confirmed 样式缺陷的 report 在此产出 0 行，而 generate_reports 产出 2 条；
+    Excel 交付件于是静默丢掉全部样式层缺陷。键表统一到 defect_keys.CONTAINER_KEYS。
     """
     rows = []
-    # 列表形缺陷（与 generate_reports.DEFECT_KEYS 同序，保证两出口同源）
-    for key in ("defects", "defectList", "diffs", "issues", "findings"):
+    # 列表形缺陷（键表与 generate_reports 同源，保证两出口同源）
+    for key in DK.CONTAINER_KEYS:
         val = report.get(key)
         if isinstance(val, list):
             for d in val:
@@ -103,9 +109,9 @@ def rows_from_report(report: dict):
             if val:
                 break  # 取到第一路列表缺陷即止，避免同源数据重复计行
     # dict 形 diffs{high,medium,low}（历史报告形状）
-    # 【审查修复】上方列表形分支已把 diffs 当 list 消费过（normalize_evidence 产的正是
+    # 上方列表形分支已把列表形 diffs 消费过（normalize_evidence 产的正是
     # {"diffs": [...]}），此处若不判形状，list.get() 会抛 AttributeError 整份表格生成失败。
-    _diffs_dict = report.get("diffs")
+    _diffs_dict = report.get(DK.LEGACY_DICT_KEY)
     if not isinstance(_diffs_dict, dict):
         _diffs_dict = {}
     for level in ("high", "medium", "low"):

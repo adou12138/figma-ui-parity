@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
 
+import defect_keys as DK
+
 TYPE_MAP = {
     "object": dict, "array": list, "string": str, "number": (int, float),
     "integer": int, "boolean": bool, "null": type(None),
@@ -69,28 +71,39 @@ def collect(report: dict) -> list:
     【F25 修复】compare_fields.py 的产物键是 `styleDiffs`，旧 collect 只认
     defects/defectList/issues——生产方与校验器对「缺陷在哪」认知不一致：styleDiffs 里
     status=confirmed 的差异完全没被校验，且顶层无 defects 键时严格模式直接 rc=6。
-    现把 styleDiffs 纳入候选键，并且**只收 status == "confirmed" 的条目**，
+
+    【键表统一】候选键现取自 defect_keys.CONTAINER_KEYS（唯一来源）。此前漏了
+    `findings` / `diffs`，而 generate_reports / gen_excel_fallback / normalize_evidence
+    都认这两个键——于是 findings 型报告一条都不校验，严格模式还把这种合法形状误判成
+    「忘填缺陷数组键」rc=6。
+
+    筛选策略保持原语义不变：defects/defectList/issues 视为**已确认的交付产物**全量收；
+    其余键（styleDiffs / diffs / findings）是原始差异，只收 status == "confirmed"，
     避免把 withinTolerance / pending 的容差内差异当缺陷校验。
     """
-    out = []
-    for key in ("defects", "defectList", "issues"):
+    primary = ("defects", "defectList", "issues")
+    secondary = tuple(k for k in DK.CONTAINER_KEYS if k not in primary)
+    out: list = []
+    for key in primary:
         value = report.get(key)
         if isinstance(value, list):
             for index, item in enumerate(value):
                 if isinstance(item, dict):
                     out.append(("{}[{}]".format(key, index), item))
             break
-    # styleDiffs 与上面三个键并存时全部收集（compare_fields 同时输出多类差异）。
-    style_diffs = report.get("styleDiffs")
-    if isinstance(style_diffs, list):
-        for index, item in enumerate(style_diffs):
+    # 其余容器键与 primary 并存时全部收集（compare_fields 同时输出多类差异）。
+    for key in secondary:
+        value = report.get(key)
+        if not isinstance(value, list):
+            continue
+        for index, item in enumerate(value):
             if not isinstance(item, dict):
                 continue
             if item.get("status") != "confirmed":
                 continue
             item = dict(item)
             item.setdefault("status", "confirmed")
-            out.append(("styleDiffs[{}]".format(index), item))
+            out.append(("{}[{}]".format(key, index), item))
     for key in ("pendingChecks", "pending"):
         value = report.get(key)
         if isinstance(value, list):
@@ -133,13 +146,14 @@ def main() -> int:
     # 【F25 反静默假通过】严格模式下要求 report **显式存在**缺陷数组键（允许空数组
     # 但键必须在）：「忘了填缺陷数组」与「真零缺陷」产出完全相同的 exit 0——前者是
     # 最常见的静默假通过形态，配合报告出口的形状分歧曾形成完整假通过链。
-    # 键集合与 collect() 保持一致（含 styleDiffs），否则「产物只有 styleDiffs」
-    # 会因顶层无 defects 键被判 rc=6，与 collect 刚纳入的 styleDiffs 自相矛盾。
+    # 键集合与 collect() 的 CONTAINER_KEYS 严格一致（含 findings/diffs），否则
+    # 「产物只有 findings」会因顶层无 defects 键被判 rc=6，与 collect 刚纳入的
+    # findings 自相矛盾。
     if args.strict and not any(
-            isinstance(report.get(k), list)
-            for k in ("defects", "defectList", "issues", "styleDiffs")):
-        errors.append("严格模式：report 缺少显式缺陷数组键（defects/defectList/issues/styleDiffs 任一，"
-                      "允许空数组但键必须存在）——「忘填」与「真零缺陷」必须可区分")
+            isinstance(report.get(k), list) for k in DK.CONTAINER_KEYS):
+        errors.append("严格模式：report 缺少显式缺陷数组键（%s 任一，"
+                      "允许空数组但键必须存在）——「忘填」与「真零缺陷」必须可区分"
+                      % "/".join(DK.CONTAINER_KEYS))
 
     result = {"checked": len(entries), "errors": len(errors), "strict": args.strict,
               "dimensionsCovered": sorted({str(d.get("dimension")) for _, d in entries if d.get("dimension")})}

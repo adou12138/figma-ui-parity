@@ -32,7 +32,7 @@ python scripts/compare_fields.py --design ./parity-test/design_model.json \
 # 5. 三道硬门禁
 python scripts/validate_defects.py --report ./parity-test/report.json --strict
 python scripts/coverage_gate.py  --report ./parity-test/report.json --enforce --write
-python scripts/ignore_regions.py --config ./parity-test/ignoredRegions.json --enforce
+python scripts/ignore_regions.py --file ./parity-test/ignoredRegions.json --enforce
 
 # 6. 出报告
 python scripts/generate_reports.py --input ./parity-test/report.json --outdir ./parity-test/reports

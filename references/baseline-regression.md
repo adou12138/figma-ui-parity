@@ -28,7 +28,7 @@ node scripts/baseline_regression.cjs \
 行为：
 
 - **无 baseline 文件** → 仅创建 baseline，输出 `baselineCreated:true`，**不报错、不阻塞**（首次运行自动建基线）。
-- **有 baseline** → 与本次 `report.json` 比对，输出 `added`（回归项）/ `fixed`（修复项）/ `summary`，并刷新 baseline 为本次。
+- **有 baseline** → 与本次 `report.json` 比对，输出 `added`（回归项）/ `fixed`（修复项）/ `summary`。**默认不刷新 baseline**（每次运行另存一份快照，基线保持不动）；首次运行写出 `baselineProvisional:true` 的**临时基线**，确认该次结果可信后传 `--update-baseline` 转正。
 - 比对维度：总 diff 数、覆盖率、高/中/低 diff 数、各 verdict 计数、待确认数。其中 diff 数、未覆盖数等"越低越好"的指标减少记为 `fixed`、增加记为 `regressed`。
 
 ## 集成到报告

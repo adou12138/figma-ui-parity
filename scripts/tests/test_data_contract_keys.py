@@ -150,5 +150,81 @@ class DataContractKeyTests(unittest.TestCase):
             % unknown)
 
 
+# ---------------------------------------------------------------- 键表单一来源
+# 容器键表曾有三份手抄副本并各自漂移，造成两类静默蒸发（已实测坐实）：
+#   · gen_excel_fallback 漏 styleDiffs ⇒ Excel 交付件 0 条缺陷，stderr 还打印
+#     「请检查是否缺少缺陷数组键」，而键明明在里面；
+#   · validate_defects 漏 findings/diffs ⇒ findings 型报告 checked=0，严格模式误报 rc=6。
+# 下面两条锁住「表只有一份」这个架构约束，防再次漂移。
+SHARED_TABLE_CONSUMERS = ("assemble_report.py", "gen_excel_fallback.py",
+                          "validate_defects.py", "normalize_evidence.py")
+# generate_reports 自持 DEFECT_KEYS（另有独立 styleDiffs 路径），只要求有交集。
+ALL_CONSUMERS = SHARED_TABLE_CONSUMERS + ("generate_reports.py",)
+
+
+def _literal_container_keys(tree) -> set:
+    """源码里出现的容器键字面量（判断该 consumer 认哪些键）。"""
+    import defect_keys as DK
+    wanted = {k.lower() for k in DK.CONTAINER_KEYS}
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if node.value.lower() in wanted:
+                out.add(node.value)
+    return out
+
+
+def _imports_defect_keys(tree) -> bool:
+    """是否真的 import 了共享键表。
+
+    必须走 AST 判 import 语句：早前一版写成 `"defect_keys" in src`，而 docstring
+    里恰好提到该模块名 ⇒ 断言恒真，实测把 import 删掉测试仍然全绿（变异测试抓到）。
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == "defect_keys" for alias in node.names):
+                return True
+        if isinstance(node, ast.ImportFrom) and node.module == "defect_keys":
+            return True
+    return False
+
+
+class SharedKeyTableTests(unittest.TestCase):
+    """缺陷容器键表只能有一份（改键只改 defect_keys.py）。"""
+
+    def test_shared_consumers_import_defect_keys(self):
+        for name in SHARED_TABLE_CONSUMERS:
+            tree = ast.parse((SCRIPTS / name).read_text(encoding="utf-8"))
+            self.assertTrue(
+                _imports_defect_keys(tree),
+                "%s 未真正 import defect_keys（注释里提到不算）——手抄的容器键表会再次漂移，"
+                "Excel 丢全部 styleDiffs / validate 把 findings 型报告判 rc=6 都是这么来的" % name)
+
+    def test_consumer_keys_overlap_shared_table(self):
+        """未用共享表的 consumer（generate_reports 自持 DEFECT_KEYS）也必须有交集。"""
+        import defect_keys as DK
+        shared = set(DK.CONTAINER_KEYS)
+        for name in ALL_CONSUMERS:
+            tree = ast.parse((SCRIPTS / name).read_text(encoding="utf-8"))
+            if _imports_defect_keys(tree):
+                continue
+            found = _literal_container_keys(tree)
+            self.assertTrue(
+                found & shared,
+                "%s 未 import 共享表，且内置容器键 %s 与共享表 %s 无交集——该 consumer "
+                "读不到任何 producer 产物" % (name, sorted(found), sorted(shared)))
+
+    def test_producer_output_reachable_from_shared_table(self):
+        """compare_fields 产物必须至少有一个键落在共享键表里，否则所有 consumer 读到 0 条。"""
+        import defect_keys as DK
+        with tempfile.TemporaryDirectory() as td:
+            produced = _run_producer(Path(td))
+        inter = set(produced) & set(DK.CONTAINER_KEYS)
+        self.assertTrue(
+            inter,
+            "compare_fields 产物顶层键 %s 与共享键表 %s 无交集——全部 consumer 都会读到 0 条缺陷"
+            % (sorted(produced), sorted(DK.CONTAINER_KEYS)))
+
+
 if __name__ == "__main__":
     unittest.main()

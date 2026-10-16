@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.31.3
+version: 4.31.4
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -165,13 +165,13 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 
 维度 7.35–7.38（运行期 JS 异常、交互期网络失败、重复提交、元素遮挡）用 `scripts/runtime_observability.js`：在交互前安装钩子、交互后采集，见 `references/runtime-observability.md`。仅当本轮做了交互并安装了钩子才算执行过，否则填 `notRun` 并写明原因。
 
-场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 只加深**两类**组合：异常数据条数（`data_cases+3`）与逐断点展开（7.4 逐断点、异常输入 × 首尾断点，需 ≥2 个断点才生效）。另：`run_parity_pipeline.py` 当前不传递 `--combo-depth`，该参数只在手工调用 `discover_scenarios.py` 时生效。
+场景数量与组合：`scripts/discover_scenarios.py` 默认按单点生成（`--combo-depth 1`）；`--combo-depth 2` 只加深**两类**组合：异常数据条数（`data_cases+3`）与逐断点展开（7.4 逐断点、异常输入 × 首尾断点，需 ≥2 个断点才生效）。
 
 **「state×viewport×异常数据」的说法不准确**：状态类场景里 7.25 暗色、7.26 打印、7.33 接口异常**无条件生成**（`discover_scenarios.py:214/218/221`），与 combo-depth 无关；**7.32 状态残留不是无条件**——仅当识别到 `tabs / table / pagination` 交互（`:226`）或缺陷池命中 `7.32`（`:230`）时才生成，页面无此类元素时该维度不出场景。元素级场景按风险排序（删除/写操作、无名称图标按钮优先）也**无条件执行**，`combo=1` 同样排序。
 
 **缺陷模式池**（`--patterns assets/defect_patterns.json`）：历史高频翻车的维度即使被页面内容门槛挡住也会补出页面级场景（`source=pattern-deep`）、表单校验类高发时加深异常数据，产物 `patternFeedback` 写明加权依据；该模式只影响覆盖与深度，不自动生成断言。不传 `--patterns` 时**场景清单本身**与接入前逐条一致——产物里的 `patternFeedback` 字段恒在，未接入时 `applied=false` 并附说明，那是输出结构的差异、不是场景差异。
 
-**管线默认已接入模式池**：`run_parity_pipeline.py` 现在默认把 `--patterns` 指向 `assets/defect_patterns.json`（`--no-patterns` 可关），并在 `generate_reports` 之后追加 `pattern_pool --merge` 阶段，把本轮缺陷按指纹并回池（幂等，无新模式不写盘）。因此**走管线时模式池加权默认生效**——池里现有 35 条 DP-* 模式，会按历史缺陷维度补场景（如 7.31 滚动 UX）。手工逐个调 `discover_scenarios.py` 仍是不传则不生效，两条路径的口径差异就在这。`--combo-depth` / `--roles` / `--breakpoints` 也可由管线透传。
+**管线默认已接入模式池**：`run_parity_pipeline.py` 现在默认把 `--patterns` 指向 `assets/defect_patterns.json`（`--no-patterns` 可关），并在 `generate_reports` 之后追加 `pattern_pool --merge` 阶段，把本轮缺陷按指纹并回池（幂等，无新模式不写盘）。因此**走管线时模式池加权默认生效**——池里现有 31 条 DP-* 模式，会按历史缺陷维度补场景（如 7.31 滚动 UX）。手工逐个调 `discover_scenarios.py` 仍是不传则不生效，两条路径的口径差异就在这。`--combo-depth` / `--roles` / `--breakpoints` 也可由管线透传。
 
 元素级与数据级场景有数量上限，被截断时必须在报告写明。
 

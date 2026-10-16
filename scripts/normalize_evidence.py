@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """Normalize and deduplicate defect evidence without accessing network or credentials.
 
-Entry keys accepted (in order): a bare JSON list, or an object holding one of
-`diffs` / `styleDiffs` / `defects` / `findings` / `issues`. This matches every
-producer in this skill (compare_fields -> styleDiffs, extra_checks -> findings,
-assembled reports -> defects) so the normalizer never silently sees zero items.
+Entry keys accepted (in order): a bare JSON list, or an object holding one of the
+keys in `defect_keys.CONTAINER_KEYS`. The key table lives in exactly one place
+(`defect_keys.py`) because three consumers used to keep their own copy and drifted
+apart — `gen_excel_fallback` lost every `styleDiffs` defect and `validate_defects`
+rejected `findings`-shaped reports with rc=6. This matches every producer in this
+skill (compare_fields -> styleDiffs, extra_checks -> findings, assembled reports ->
+defects) so the normalizer never silently sees zero items.
 """
 from __future__ import annotations
 import argparse, hashlib, json
 from pathlib import Path
 
-ITEM_KEYS = ("diffs", "styleDiffs", "defects", "findings", "issues")
+import defect_keys as DK
+
+ITEM_KEYS = DK.CONTAINER_KEYS
 
 
 def extract_items(data) -> tuple:
