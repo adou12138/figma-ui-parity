@@ -104,8 +104,16 @@ function isCandidateLink(href, baseUrl, opts) {
   // 【F34】危险词匹配前做 decodeURIComponent 归一：`?action=%E5%88%A0%E9%99%A4`
   // 解码后含「删除」，不归一时 indexOf 匹配不到 → 安全策略被 URL-encode 绕过。
   // 解码失败（非法 % 序列）按原文匹配，不抛错。
+  // 【三轮审查】最多解两层：`%2525` 双重编码可绕过单次解码（攻击者常这样藏词），
+  // 两层后仍无法解码的按原文匹配（继续解会把合法 %xx 内容误判）。
   let decoded = u.href.toLowerCase();
-  try { decoded = decodeURIComponent(u.href).toLowerCase(); } catch (e) { /* 保留原文 */ }
+  for (let round = 0; round < 2; round++) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;  // 已无可解码内容
+      decoded = next.toLowerCase();
+    } catch (e) { break; }  // 非法 % 序列：按当前层匹配
+  }
   for (const w of DANGER_WORDS) {
     const wl = String(w).toLowerCase();
     if (decoded.indexOf(wl) !== -1) return { ok: false, reason: '含危险词：' + w };

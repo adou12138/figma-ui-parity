@@ -419,7 +419,8 @@ def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), c
     # 旧版 comparable 是全局开关，移动端 375 对 1440 帧时连「文案写错」「主色错成蓝」
     # 都报 notComparable，整页假通过。拆成两个口径：
     STYLE_ONLY_CATEGORIES = {"color", "characters", "font", "radius", "border",
-                             "shadow", "opacity"}
+                             "shadow", "opacity", "lineheight", "letterspacing",
+                             "line_height", "letter_spacing"}
 
     def emit(category, prop, expected, actual, delta, tolerance_key, dimension=None) -> None:
         tol = TOLERANCE.get(tolerance_key)
