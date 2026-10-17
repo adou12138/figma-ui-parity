@@ -27,10 +27,10 @@
 
 ```json
 "coverage": {
-  "total": 21,
-  "executed": 14,        // pass+fail+warn+pending
-  "notRun": 5,
-  "dataMissing": 2,
+  "total": 39,
+  "executed": 26,        // pass+fail+warn+pending
+  "notRun": 8,
+  "dataMissing": 5,
   "coverageRate": 0.67,  // executed / total
   "fullCoverage": false
 }
@@ -38,7 +38,7 @@
 
 5. **阈值告警**：当 `(notRun + dataMissing) / total > 0.30`（即覆盖率 < 70%）时，报告**顶部必须显示红字警示**：
 
-> ⚠️ **本报告非全量覆盖**：仅完成 14/21 项（覆盖率 67%），未覆盖项：7.4、7.6、7.19…。本报告不能作为"UI 无问题"的结论使用。
+> ⚠️ **本报告非全量覆盖**：仅完成 26/39 项（覆盖率 67%），未覆盖项：7.4、7.6、7.19…。本报告不能作为"UI 无问题"的结论使用。
 
 ### 对账表模板（照抄进报告，逐项填）
 
@@ -142,3 +142,20 @@ node scripts/node/run_official_extraction.cjs \
 产出：`containers.json` / `texts.json` / `icons.json` / `alignment.json` / `responsive.json`（可选）/ `page.json`（与 MCP 路径同一份 inventory 契约）/ `extraction_meta.json`（含数据质量校验结果）。
 
 > **两条提取路径一致性**：node 兜底路径现已复用 `collect_page_inventory.js` 产出 `page.json`，与 MCP `browser_evaluate` 路径产出同构。可用 `scripts/verify_extraction_contract.py --mcp <mcp page.json> --node <node page.json>` 对比两份计数的漂移（阈值默认 0.3），防止两条路径字段漂移导致 `compare_fields.py` 行为不一致。任一份缺失或漂移超阈值 → 非零退出，相关维度标 `dataMissing`。
+
+---
+
+## 闸 D：交付前静默失败自检（`scripts/audit_silent_failures.py`）
+
+闸 A/C/B 保证「没做的不被伪装成做了」，本闸保证「失败的不被伪装成没发生」。裸 `except: pass` / `continue`、空 `catch {}`、`.catch(() => false)`、`except: return None` 这类写法会把「失败」折成「没有」，上游无从区分——检查静默不跑，报告却照样全绿，正是同一种静默失真。
+
+```bash
+python scripts/audit_silent_failures.py            # 对照基线打印命中数；超基线也返回 0
+python scripts/audit_silent_failures.py --enforce  # 超基线时以非零码阻断
+```
+
+- **什么时候跑**：任何 `.py` / `.js` / `.cjs` 脚本的控制流或字段契约改动后，与 `smoke_chain.py` 一起跑；交付前必须跑一次 `--enforce`。
+- **判定口径**：两个计数**都只允许降不允许升**——① 无留痕命中数（命中点邻近没有留痕语句）② 静默失败总命中数。只看前者会被「修一处 + 新增一处」相抵蒙混过去，所以总命中数同样卡阈值。基线存于 `scripts/silent_failure_audit_baseline.json`（`noTraceNearby` 与 `total` 两项）。
+- **rc 含义**：`0` = 不高于基线；`1` = 高于基线**且**传入 `--enforce`。不加 `--enforce` 时即使超基线也只打印、不返回非零。
+- **`--enforce` 的作用**：把「超基线」从提示升级为阻断，供交付门禁接入（与 `coverage_gate.py --enforce` 同一约定）。
+- **留痕口径**：留痕必须**紧邻**命中点——命中行之后 3 行内，或落在 `except`/`catch` 块自身的缩进范围内。强标记（`console.warn` / `console.error` / `stderr` / `notRun` / `dataQuality` 等）邻近即采信；弱标记（`append` / `write` / `console.` / `pending` / `skipped`）只在块内才认。修法是在命中点旁补一句真正的留痕（把异常写进 `stderr`，或往产物里落 `notRun` + 原因），而不是把日志写到别处充数。

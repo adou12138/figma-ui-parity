@@ -154,9 +154,20 @@ def main() -> int:
         af = []
         if style_diffs.exists():
             af += ["--style-diffs", str(style_diffs)]
+        # 7.4 响应式约束断言此前无任何管线入口——assert_constraints 的 violations 是
+        # 7.4 唯一的缺陷产出通道，不接上该维度永远不出缺陷（SKILL.md 却声明它是 7.4 的
+        # 执行手段）。仅在 measurements.json 存在时跑：没有实测坐标就跳过，行为与接入前
+        # 一致，不猜坐标。
+        if (workdir / "measurements.json").exists() and args.design_json:
+            stage("assert_constraints", [
+                sys.executable, str(HERE / "assert_constraints.py"),
+                "--design", str(args.design_json),
+                "--measurements", str(workdir / "measurements.json"),
+                "--output", str(workdir / "constraints.json")], args.dry_run, log)
         for name, flag in (("findings.json", "--findings"),
                            ("runtime.json", "--findings"),
                            ("journey_findings.json", "--findings"),
+                           ("constraints.json", "--findings"),
                            ("state_scenarios.json", "--state-scenarios"),
                            ("scenario_coverage.json", "--scenario-coverage")):
             candidate = workdir / name

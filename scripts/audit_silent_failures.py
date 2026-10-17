@@ -25,6 +25,25 @@ PATTERNS = [
     # ③ 采集/解析函数里的 `return None` / `return []` 形态：缺陷被折成空值返回给
     #    上游，上游拿到 None 与「真的没有」不可区分——与 pass/continue 同级的静默失败。
     ("py-except-return-empty", r"except[^:\n]*:\s*\n\s*return\s*(?:None|\[\]|\{\})"),
+    # ---- 第四批变体：JS 侧 try/catch 与「折成空值」形态（旧口径全漏）----
+    # ④ `catch (e) { }` 空块：旧 `js-empty-catch` 要求字面 `.catch(`（含点），
+    #    try/catch 形态完全不在 PATTERNS 里。实测约 22 处。
+    ("js-empty-catch-block",
+     r"catch\s*(?:\([^)\n]*\))?\s*\{\s*(?:/\*[\s\S]*?\*/\s*)?\}"),
+    # ⑤ `.catch(() => 值)`：旧式尾部限定 `\{\s*\}\s*\)`，`[]`/`null`/`false` 都不匹配。
+    #    实测约 40 处——`.catch(() => false)` 会把「探测失败」折成「不可见」并 continue，
+    #    该元素静默不测；`.catch(() => [])` 让「盘点失败」与「页面真没有」不可区分。
+    ("js-catch-return-value",
+     r"\.catch\(\s*(?:\(\w*\)|\w*)?\s*=>\s*"
+     r"(?:\[\s*\]|null|undefined|false|true|0|''|\"\")\s*\)"),
+    # ⑥ JS catch 块体内只有 return 空值。
+    ("js-catch-return-empty",
+     r"catch\s*(?:\([^)\n]*\))?\s*\{\s*return\s+"
+     r"(?:null|undefined|false|\[\s*\]|\{\s*\})\s*;?\s*\}"),
+    # ⑦ py `except...: return <非空值>`：旧 `py-except-return-empty` 把返回值限定死成
+    #    None/[]/{}，`return ""`/`return False`/`return -1` 这类同样把失败折成中性值的
+    #    形态一条都不报。用负向字符类排除已覆盖的三种。
+    ("py-except-return-value", r"except[^:\n]*:\s*\n\s*return\s+[^N\[{\s]"),
 ]
 
 # 【邻近性修复】留痕证据必须**紧邻**命中点：命中点之后若干行内、且落在 except 块

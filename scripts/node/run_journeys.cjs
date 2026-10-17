@@ -348,7 +348,16 @@ async function clickLink(page, link) {
     const n = await all.count();
     for (let i = 0; i < n && !clicked; i += 1) {
       const cand = all.nth(i);
-      if (!(await cand.isVisible().catch(() => false))) continue;
+      // 可见性探测失败（元素已脱离 DOM / 选择器失效）与「确实不可见」必须区分：
+      // 折成 false 再 continue 会让该候选**静默不测**——正是本脚本要根治的假通过形态。
+      let candVisible = false;
+      try {
+        candVisible = await cand.isVisible();
+      } catch (e) {
+        console.warn('[journeys] 可见性探测失败，候选已跳过：' + ((e && e.message) || e));
+        continue;
+      }
+      if (!candVisible) continue;
       await cand.click({ timeout: 5000 });
       clicked = true;
     }
@@ -360,7 +369,12 @@ async function clickLink(page, link) {
   }
   // 【F36】domcontentloaded 有界等待（SPA 渲染再补 1200ms）：主文档慢返时
   // docStatus 不会停在 null（4xx/5xx 漏判），也不会死等 8s。
-  await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch(() => {});
+  await page.waitForLoadState('domcontentloaded', { timeout: 8000 }).catch((e) => {
+    // 有界等待超时是 F36 的设计内行为、不是错误，但必须出声：后续 docStatus / landedChars
+    // 的判定建立在「页面可能尚未渲染完」这一事实上，报告里看得见才不会把渲染中当成缺陷。
+    console.warn('[journeys] domcontentloaded 未在 8s 内就绪（'
+      + ((e && e.message) || e) + '），继续采集');
+  });
   await page.waitForTimeout(1200); // 等导航落定 / SPA 渲染
   page.off('response', onResp);
   const after = await pageState(page);

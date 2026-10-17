@@ -14,7 +14,10 @@ figma-ui-parity 的 report 里「缺陷可能挂在哪些顶层键下」此前�
 """
 
 # 有序：越靠前越「权威」。采用「取第一路非空」策略的 consumer 按此序试探。
-CONTAINER_KEYS = ("defects", "defectList", "styleDiffs", "diffs", "findings", "issues")
+# violations 是 assert_constraints 的 7.4 约束违反条目（自带 status=confirmed），
+# 与 findings 同级：它此前没有任何消费方，7.4 的缺陷产出通道是断的。
+CONTAINER_KEYS = ("defects", "defectList", "styleDiffs", "diffs", "findings",
+                  "violations", "issues")
 
 # 历史 dict 形 diffs{high,medium,low}——与上面的列表形 diffs 同名不同形状，消费前须判形状。
 LEGACY_DICT_KEY = "diffs"

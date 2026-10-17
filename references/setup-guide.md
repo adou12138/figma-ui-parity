@@ -1,6 +1,6 @@
 # 配置与环境检查
 
-本指南覆盖 `figma-source`、`playwright`、`visual-parity`、`python-runtime` 和 `report-export` 五项依赖。
+本指南覆盖 `check_environment.py` 实际检查的 8 项依赖：`python-runtime`、`node-runtime`、`playwright-core`、`headed-browser`、`playwright-mcp`、`figma-source`、`visual-parity`、`output-directory`。下文「playwright」一节涵盖 `playwright-core` / `headed-browser` / `playwright-mcp` 三项，「report-export」一节对应 `output-directory` 的可写性探测。
 
 ## 必需输入
 

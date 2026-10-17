@@ -1,7 +1,38 @@
 {
-  "total": 32,
-  "noTraceNearby": 29,
+  "note": "静默失败存量基线（只允许降不允许升）。本轮把 PATTERNS 扩到 JS try/catch 空块、.catch(()=>值)、catch return 空值、py except return 非空值等形态后，原先漏检的既有存量被重新识别出来，故计数上升——新增条目已逐条确认属既有代码（本轮改动文件零新增命中）。",
+  "total": 86,
+  "noTraceNearby": 74,
   "hits": [
+    {
+      "file": "auth.cjs",
+      "line": 36,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 38,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 56,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 57,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 77,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
     {
       "file": "auth.cjs",
       "line": 80,
@@ -10,8 +41,80 @@
     },
     {
       "file": "auth.cjs",
+      "line": 86,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 87,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
       "line": 88,
       "pattern": "js-empty-catch",
+      "traceNearby": false
+    },
+    {
+      "file": "auth.cjs",
+      "line": 99,
+      "pattern": "js-catch-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "button_audit.js",
+      "line": 38,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "button_audit.js",
+      "line": 44,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "button_audit.js",
+      "line": 54,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "button_audit.js",
+      "line": 64,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "button_audit.js",
+      "line": 73,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "capture_aria.js",
+      "line": 17,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "capture_aria.js",
+      "line": 36,
+      "pattern": "js-catch-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "collect_page_inventory.js",
+      "line": 106,
+      "pattern": "js-catch-return-empty",
+      "traceNearby": false
+    },
+    {
+      "file": "compare_fields.py",
+      "line": 80,
+      "pattern": "py-except-return-value",
       "traceNearby": false
     },
     {
@@ -22,8 +125,20 @@
     },
     {
       "file": "compare_fields.py",
-      "line": 511,
+      "line": 518,
       "pattern": "py-except-return-empty",
+      "traceNearby": false
+    },
+    {
+      "file": "diff_score.js",
+      "line": 243,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "discover_scenarios.py",
+      "line": 91,
+      "pattern": "py-except-return-value",
       "traceNearby": false
     },
     {
@@ -45,6 +160,36 @@
       "traceNearby": false
     },
     {
+      "file": "pattern_pool.py",
+      "line": 61,
+      "pattern": "py-except-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 48,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 73,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 149,
+      "pattern": "js-catch-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 242,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
+    },
+    {
       "file": "run_button_audit.cjs",
       "line": 263,
       "pattern": "js-empty-catch",
@@ -64,8 +209,26 @@
     },
     {
       "file": "run_button_audit.cjs",
+      "line": 294,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 311,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
+    },
+    {
+      "file": "run_button_audit.cjs",
       "line": 366,
       "pattern": "js-empty-catch",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 398,
+      "pattern": "js-catch-return-value",
       "traceNearby": false
     },
     {
@@ -76,8 +239,26 @@
     },
     {
       "file": "run_button_audit.cjs",
+      "line": 403,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
       "line": 404,
       "pattern": "js-empty-catch",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 404,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_button_audit.cjs",
+      "line": 452,
+      "pattern": "js-catch-return-value",
       "traceNearby": false
     },
     {
@@ -88,27 +269,105 @@
     },
     {
       "file": "run_journeys.cjs",
-      "line": 363,
+      "line": 60,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_journeys.cjs",
+      "line": 64,
+      "pattern": "js-catch-return-empty",
+      "traceNearby": false
+    },
+    {
+      "file": "run_journeys.cjs",
+      "line": 80,
+      "pattern": "js-catch-return-empty",
+      "traceNearby": false
+    },
+    {
+      "file": "run_journeys.cjs",
+      "line": 130,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_journeys.cjs",
+      "line": 340,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_journeys.cjs",
+      "line": 442,
       "pattern": "js-empty-catch",
       "traceNearby": false
     },
     {
       "file": "run_journeys.cjs",
-      "line": 428,
-      "pattern": "js-empty-catch",
+      "line": 538,
+      "pattern": "js-catch-return-value",
       "traceNearby": false
     },
     {
       "file": "run_journeys.cjs",
-      "line": 582,
+      "line": 596,
       "pattern": "js-empty-catch",
       "traceNearby": false
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 46,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 89,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 116,
+      "pattern": "js-catch-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 173,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
     },
     {
       "file": "run_official_extraction.cjs",
       "line": 205,
       "pattern": "js-empty-catch",
       "traceNearby": true
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 209,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
+    },
+    {
+      "file": "run_official_extraction.cjs",
+      "line": 263,
+      "pattern": "js-catch-return-value",
+      "traceNearby": false
+    },
+    {
+      "file": "run_state_scenarios.cjs",
+      "line": 71,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "run_state_scenarios.cjs",
+      "line": 77,
+      "pattern": "js-catch-return-empty",
+      "traceNearby": false
     },
     {
       "file": "run_state_scenarios.cjs",
@@ -127,6 +386,12 @@
       "line": 178,
       "pattern": "js-empty-catch",
       "traceNearby": false
+    },
+    {
+      "file": "run_state_scenarios.cjs",
+      "line": 188,
+      "pattern": "js-catch-return-value",
+      "traceNearby": true
     },
     {
       "file": "run_state_scenarios.cjs",
@@ -159,10 +424,58 @@
       "traceNearby": false
     },
     {
+      "file": "runtime_observability.js",
+      "line": 124,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "runtime_observability.js",
+      "line": 125,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "runtime_observability.js",
+      "line": 173,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "save_auth.cjs",
+      "line": 25,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": true
+    },
+    {
+      "file": "save_auth.cjs",
+      "line": 69,
+      "pattern": "js-catch-return-value",
+      "traceNearby": true
+    },
+    {
       "file": "save_auth.cjs",
       "line": 77,
       "pattern": "js-empty-catch",
       "traceNearby": true
+    },
+    {
+      "file": "stabilize.js",
+      "line": 45,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "stabilize.js",
+      "line": 53,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
+    },
+    {
+      "file": "stabilize.js",
+      "line": 70,
+      "pattern": "js-empty-catch-block",
+      "traceNearby": false
     },
     {
       "file": "stabilize.js",
@@ -192,6 +505,18 @@
       "file": "stabilize.js",
       "line": 147,
       "pattern": "js-empty-catch",
+      "traceNearby": false
+    },
+    {
+      "file": "stabilize.js",
+      "line": 169,
+      "pattern": "js-catch-return-value",
+      "traceNearby": true
+    },
+    {
+      "file": "start_test.py",
+      "line": 35,
+      "pattern": "py-except-return-value",
       "traceNearby": false
     }
   ]

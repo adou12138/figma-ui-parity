@@ -93,7 +93,7 @@ Figma 节点 dump ──extract_design_fields.py──▶ design_model.json ─�
 组合深度（`--combo-depth`）：
 
 - `--combo-depth 1`（默认）：单点场景，输出与不放宽时一致。
-- `--combo-depth 2`：引入 **state × viewport × 异常数据** 的组合场景——多视口展开成逐断点（`source=combo`、带 `viewport`）、高风险输入追加"异常数据 × 首尾断点"、表单密集页（有 `forms` 且输入 ≥3）自动加深异常数据覆盖。产物新增 `comboDepth` 与 `breakpoints` 两个顶层字段。
+- `--combo-depth 2`：只加深**两类**组合——异常数据条数（表单密集页即「有 `forms` 且输入 ≥3」时 `data_cases+3`）与逐断点展开（多视口展开成逐断点 `source=combo` 并带 `viewport`、高风险输入追加「异常数据 × 首尾断点」，需 ≥2 个断点才生效）。**它不引入状态类组合**：7.25 暗色、7.26 打印、7.33 接口异常是无条件生成的，与 combo-depth 无关。产物新增 `comboDepth` 与 `breakpoints` 两个顶层字段。
 - 元素级场景一律**按风险排序后取用**（危险/写操作、无名称图标按钮、缺 label 的输入靠前），让有限的 `--max-elements` 预算先打高价值目标；这只改选择先后，不改上限、不增总数。
 - `--breakpoints`（默认 `1440,1280,768,375`）控制组合用的断点集合。
 

@@ -29,7 +29,7 @@
 | 7.17 | 表单校验与错误态 | `bug-driven-checks.md` | `discover_scenarios.py` |
 | 7.18 | 浮层 / 下拉 / 弹框交互与层级 | `button-audit.md` | 部分 |
 | 7.19 | 可访问性与键盘可用性 | `aria-diff.md` | `capture_aria.js` |
-| 7.20 | 加载 / 空态 / 禁用态 | `state-journey.md` | `discover_scenarios.py` |
+| 7.20 | 加载 / 空态 / 禁用态 | `state-journey.md` | `discover_scenarios.py`、`extra_checks.js` |
 | 7.21 | 长文本 / 多语言 / 密集数据适配 | `bug-driven-checks.md` | `discover_scenarios.py` |
 | 7.22 | 按钮可用性与点击生效 | `button-audit.md` | `run_button_audit.cjs` |
 | 7.23 | 元素双向盘点（设计稿有页面无 / 页面有设计稿无） | `button-audit.md` | `compare_fields.py` |
@@ -41,7 +41,7 @@
 | 7.29 | 焦点可见性与键盘细节 | `bug-driven-checks.md` | `extra_checks.js` |
 | 7.30 | 国际化细节（RTL / emoji / 全角半角） | `bug-driven-checks.md` | `extra_checks.js` |
 | 7.31 | 滚动 UX（滚动条 / 固定底栏 / sticky / 滚动锁定） | `bug-driven-checks.md` | `extra_checks.js` |
-| 7.32 | 页面级状态残留（SPA 路由 / 多标签页 / 返回刷新） | `bug-driven-checks.md` | `discover_scenarios.py`（**需识别到 tabs / table / pagination，或缺陷池命中 7.32**；两者都不满足时该维度无场景，应填 `notRun:页面无路由类元素`，**不是漏跑**） |
+| 7.32 | 页面级状态残留（SPA 路由 / 多标签页 / 返回刷新） | `bug-driven-checks.md` | `discover_scenarios.py`（生成）+ `run_state_scenarios.cjs`（执行）（**需识别到 tabs / table / pagination，或缺陷池命中 7.32**；两者都不满足时该维度无场景，应填 `notRun:页面无路由类元素`，**不是漏跑**） |
 | 7.33 | 接口异常与慢网络下的界面 | `bug-driven-checks.md` | `run_state_scenarios.cjs` |
 | 7.34 | 角色与权限态视图差异 | `bug-driven-checks.md` | 无 |
 | 7.35 | 运行期 JS 异常（console.error / onerror / unhandledrejection） | `runtime-observability.md` | `runtime_observability.js` |

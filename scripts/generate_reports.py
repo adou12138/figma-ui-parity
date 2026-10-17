@@ -468,6 +468,27 @@ def main() -> int:
     payload["summary"]["defectTotal"] = len(defects)
     payload["summary"]["duplicatesMerged"] = duplicates
 
+    # 【F19 落地】compare_fields 的比对留痕此前只落在 JSON 与 stderr，报告层一个都不读——
+    # 「这次哪些值没比过」在交付件里看不见，等于留痕链在出报告时断掉。并进「降级能力」段
+    # （该段语义正是「这次哪些没做到」），与既有 degradations 合并而非覆盖。
+    _trace = dict(payload.get("degradations")) if isinstance(payload.get("degradations"), dict) else {}
+    _parse_warnings = payload.get("parseWarnings")
+    if isinstance(_parse_warnings, list) and _parse_warnings:
+        _trace["解析告警（字段名/结构未识别，比对范围缩小）"] = "; ".join(
+            str(w) for w in _parse_warnings[:6])
+    if payload.get("colorCompareSkipped"):
+        _trace["颜色未比对"] = str(payload.get("colorCompareSkipped"))
+    if payload.get("positionBasisWarning"):
+        _trace["坐标基准告警"] = str(payload.get("positionBasisWarning"))
+    for _key, _label in (("unmatchedDesign", "设计侧未匹配节点数"),
+                         ("unmatchedPage", "页面侧未匹配元素数"),
+                         ("matchedIndirect", "间接配对元素数")):
+        _value = payload.get(_key)
+        if _value:
+            _trace[_label] = str(len(_value) if isinstance(_value, list) else _value)
+    if _trace:
+        payload["degradations"] = _trace
+
     formats = {f.strip().lower() for f in args.formats.split(",") if f.strip()}
     outdir = args.outdir
     written = {}

@@ -61,7 +61,7 @@ python scripts/run_parity_pipeline.py \
 | `collect_page_inventory.js` | 页面（`browser_evaluate`） | `page.json`（inventory 契约） | 零尺寸元素不入库；记录 `nth` |
 | `compare_fields.py` | `design_model.json` + 页面提取 + 可选 mapping | `styleDiffs.json`（含 `defects`、`unmatched`） | 坐标基准归一（中位归一需 ≥3 对配对，偏移超阈值输出告警）；属性级容差表；文本/容器分开配对，`pairConfidence` 记录配对依据（explicit/text-exact/name-segment/name-substring/geometry-contained），name-hint 按**词段**比对、<3 字符名不参与，低置信（中文名退化子串）不判 confirmed 只记 pending；文本子节点配对成功的父容器先尝试与唯一承载盒配对走正常样式比对（`pairRole: box-credit`），找不到才记 `matchedIndirect`（标 pending + 原因，不再静默 credit）；颜色支持 `#rgb/#rrggbb(aa)`、逗号/空格分隔 `rgb()/rgba()`、`/ alpha`、百分比与 `hsl()`，形似颜色却解析失败的值进产物 `parseWarnings.unparsedColors`；透明背景与半透明填充不参与比对；rotation 非零的节点不比位置尺寸；缺陷直接带 `severity`/`confidence`/`reproduction`/`suggestion` |
 | `assert_constraints.py` | `design_model.json` + 多视口测量 | `constraints.json` | LEFT/RIGHT/CENTER/SCALE/FIXED 断言数学，位置 ±2px、比例 ±2% |
-| `extra_checks.js` | 页面（`browser_evaluate`） | `findings.json` | 7.24–7.31 无副作用探测：图片比例、暗色、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留 |
+| `extra_checks.js` | 页面（`browser_evaluate`） | `findings.json` | 7.20/7.24/7.25/7.27/7.28/7.29/7.30/7.31 无副作用探测：图片比例、暗色、多行截断、控件细节、焦点可见性、国际化、滚动 UX、加载残留（**不含 7.26 打印视图与 7.32–7.34，这些须由场景驱动**） |
 | `runtime_observability.js` | 页面（`browser_evaluate`，**两阶段**） | `findings.json`（运行期） | 7.35–7.38 运行期观测：先调用一次安装钩子、交互后再次调用采集；见 `runtime-observability.md` |
 | `discover_scenarios.py` | `design_model.json` + `page.json` + 可选 `styleDiffs.json` | `scenarios.json` | 元素级场景 + 异常数据 + 角色态；`--roles`、`--max-elements`、`--max-data-cases`、`--combo-depth`、`--breakpoints`、`--patterns`（缺陷模式池反哺，见 `bug-driven-checks.md`） |
 | `run_state_scenarios.cjs` | 页面 URL + 安全策略 | `state_scenarios.json` + 截图 | 7.25/7.26/7.32/7.33 状态场景驱动（emulateMedia 切暗色/打印、route 拦载 fulfill 500、hash 导航+返回）；`--only` 挑维度、`staticOnly` 短路不启动浏览器；见 `bug-driven-checks.md` |
@@ -78,6 +78,7 @@ python scripts/run_parity_pipeline.py \
 | `alignment_modal_checks.js` | 页面 | 对齐与弹框走查结果 | 见 `bug-driven-checks.md` |
 | `responsive_check.js` | 页面 | 多断点健康检查 | 布局断言部分交给 `assert_constraints.py` |
 | `button_audit.js` / `node/run_button_audit.cjs` | 页面 | 按钮可用性与双向盘点 | 见 `button-audit.md`；默认 caution 拦写请求、danger 不点击；`all + testEnvironmentConfirmed=true` 时按授权执行 caution/danger |
+| `node/risk_words.cjs` | —（被依赖模块） | 导出的 `DANGER_WORDS` / `CAUTION_WORDS` | 风险词表**单一来源**。`run_journeys.cjs` 直接 `require` 它做危险链接过滤；`discover_scenarios.py`（场景 safety 分级）与 `button_audit.js`（`RE_DANGER`）各持一份同名常量与之**对拍**。改词表只改这一处再同步 `discover_scenarios.py`，`tests/test_risk_words_parity.py` 保证两边集合一致、并校验 `button_audit.js` 的 `RE_DANGER` 覆盖全部词条，漂移即测试红 |
 | `extract_design_buttons.cjs` | 设计节点 | 设计侧按钮清单 | 双向盘点输入 |
 | `gen_button_report.cjs` | 按钮审计目录 | 按钮报告 | `--dir` 必填 |
 | `journey_coverage.cjs` | `journey.json` + `coverage.json` | 状态×断点覆盖率 | 与维度覆盖率是两套口径 |

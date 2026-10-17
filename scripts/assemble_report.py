@@ -86,8 +86,15 @@ def collect_defects(path: Path, out: list, seen: set) -> int:
     runtime_observability / journeys）同理。
     """
     payload = _read_json(path)
+    items: list = []
+    if isinstance(payload, list):
+        items.extend(payload)
+    else:
+        for _key, lst in DK.iter_containers(payload):
+            items.extend(lst)
+    items.extend(_state_scenario_findings(payload))
     added = 0
-    for item in list(_findings_list(payload)) + _state_scenario_findings(payload):
+    for item in items:
         if not isinstance(item, dict):
             continue
         if str(item.get("status") or "") != "confirmed":
