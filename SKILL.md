@@ -96,7 +96,7 @@ python scripts/start_test.py \
 
 `start_test.py` 只在识别到正式测试启动后执行 `init_workdir.py` 与 `check_environment.py`，写入 `parity-test/run-manifest.json`；缺少安全策略或 `all` 未确认隔离测试环境时以非零状态阻断，不得开始页面交互。咨询类输入直接返回 `started=false`，不产生环境检查副作用。
 
-`init_workdir.py` 负责建目录并把凭据相关忽略规则写进工作区 `.gitignore`（只追加缺失行）。`check_environment.py` 只输出脱敏状态——**其 8 项依赖检查硬编码在脚本内（`check_environment.py:51-80`），并不读取仓库根的 `skill-dependencies.json`**；改那份清单不会改变检查结果，要改检查项必须改脚本。另：脚本内 `VERSION` 与 SKILL.md 版本号各自维护，历史上出现过不同步。
+`init_workdir.py` 负责建目录并把凭据相关忽略规则写进工作区 `.gitignore`（只追加缺失行）。`check_environment.py` 只输出脱敏状态——**其 8 项依赖检查硬编码在脚本内（`check_environment.py:51-93`），并不读取仓库根的 `skill-dependencies.json`**；改那份清单不会改变检查结果，要改检查项必须改脚本。另：脚本内 `VERSION` 与 SKILL.md 版本号各自维护，历史上出现过不同步。
 
 - `ready`：直接执行。
 - `partial`：核心流程继续，报告受影响能力。
@@ -145,7 +145,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 - **属性级容差**：颜色用 ΔE（≤3）、尺寸 ±1px、位置 ±2px、字距 ±0.5px、圆角 ±1px、阴影模糊 ±2px。容差内记 `withinTolerance`，不生成缺陷。
 - **透明背景不参与比对**：`rgba(0,0,0,0)` 不是黑色，必须跳过，否则会把每个无背景元素误报为颜色不符。
 - 输出 `unmatched.designOnly` 与 `unmatched.pageOnly`，作为双向盘点（7.23）输入。
-- 按钮缺失判定必须采用双通道证据：先查页面按钮盘点，再查可见完整文本。设计按钮命中按钮盘点时记录 `matchedBy=buttonInventory`；仅命中完整文本时记录 `matchedBy=fullText` 并标记 `nonStandardEntry=true`；只有两个来源都未命中时才记录 `matchedBy=none` 并进入 `missingInPage`。**该双通道判定落地在 `scripts/node/run_button_audit.cjs`（`matchedBy=buttonInventory` 见 `:189`、`fullText`+`nonStandardEntry` 见 `:198`、`none`→`missingInPage` 见 `:202`），不在 `compare_fields.py`。**
+- 按钮缺失判定必须采用双通道证据：先查页面按钮盘点，再查可见完整文本。设计按钮命中按钮盘点时记录 `matchedBy=buttonInventory`；仅命中完整文本时记录 `matchedBy=fullText` 并标记 `nonStandardEntry=true`；只有两个来源都未命中时才记录 `matchedBy=none` 并进入 `missingInPage`。**该双通道判定落地在 `scripts/node/run_button_audit.cjs`（`matchedBy=buttonInventory` 见 `:186`、`fullText`+`nonStandardEntry` 见 `:195`、`none`→`missingInPage` 见 `:199`），不在 `compare_fields.py`。**
 
 `constraints` 断言用 `scripts/assert_constraints.py` 执行：LEFT/TOP 位置不变、RIGHT/BOTTOM 边距不变、CENTER 中心不变、SCALE 比例不变（±2%）、FIXED 宽度不变。
 
