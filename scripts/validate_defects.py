@@ -65,8 +65,15 @@ def validate(value, schema: dict, path: str, errors: list, strict: bool) -> None
             validate(entry, schema["items"], "{}[{}]".format(path, index), errors, strict)
 
 
-def collect(report: dict) -> list:
-    """收集待校验的缺陷条目。
+def _has_legacy_dict_diffs(report: dict) -> bool:
+    """dict 形 diffs{high,medium,low}（模板主报告形状）是否带至少一个列表桶。"""
+    legacy = report.get(DK.LEGACY_DICT_KEY)
+    return isinstance(legacy, dict) and any(
+        isinstance(legacy.get(level), list) for level in ("high", "medium", "low"))
+
+
+def collect(report: dict) -> tuple:
+    """收集待校验的缺陷条目，返回 (缺陷条目, 待复核条目) 二元组。
 
     【F25 修复】compare_fields.py 的产物键是 `styleDiffs`，旧 collect 只认
     defects/defectList/issues——生产方与校验器对「缺陷在哪」认知不一致：styleDiffs 里
@@ -80,6 +87,15 @@ def collect(report: dict) -> list:
     筛选策略保持原语义不变：defects/defectList/issues 视为**已确认的交付产物**全量收；
     其余键（styleDiffs / diffs / findings）是原始差异，只收 status == "confirmed"，
     避免把 withinTolerance / pending 的容差内差异当缺陷校验。
+
+    【审查修复·H2】pendingChecks / pending 是「无法自动判定、需视觉/产品确认」的
+    待复核项，规范形状（name/category/confirmLocation/pageElement/reason/suggestion，
+    见 report-templates.md 9.3 与待确认问题 sheet）与 defect.schema.json 的缺陷形状
+    （dimension/property/page/target/expected/actual/evidence...）本就不同——旧版
+    把它们混进缺陷条目按 defect schema 校验，按主报告模板写的报告（模板明确含
+    pendingChecks 段）一进校验就 rc=6 被拦。现改为：待复核项单独收集、只登记计数
+    （checked 可见），不参与 schema 校验、不产生错误——「待复核」不等于「缺陷记录
+    不合规」。
     """
     primary = ("defects", "defectList", "issues")
     secondary = tuple(k for k in DK.CONTAINER_KEYS if k not in primary)
@@ -104,6 +120,7 @@ def collect(report: dict) -> list:
             item = dict(item)
             item.setdefault("status", "confirmed")
             out.append(("{}[{}]".format(key, index), item))
+    pending_out: list = []
     for key in ("pendingChecks", "pending"):
         value = report.get(key)
         if isinstance(value, list):
@@ -111,8 +128,22 @@ def collect(report: dict) -> list:
                 if isinstance(item, dict):
                     item = dict(item)
                     item.setdefault("status", "pending")
-                    out.append(("{}[{}]".format(key, index), item))
-    return out
+                    pending_out.append(("{}[{}]".format(key, index), item))
+    # 【审查修复·M1 配套】dict 形 diffs{high,medium,low}（模板主报告形状）：桶内是
+    # 已确认的交付缺陷。没有任何列表形容器命中时把桶全量收（桶语义即交付），
+    # 有列表容器（styleDiffs 等）时以其为准，避免同源数据重复计数。
+    if _has_legacy_dict_diffs(report) and not out:
+        legacy = report[DK.LEGACY_DICT_KEY]
+        for level in ("high", "medium", "low"):
+            bucket = legacy.get(level)
+            if not isinstance(bucket, list):
+                continue
+            for index, item in enumerate(bucket):
+                if isinstance(item, dict):
+                    item = dict(item)
+                    item.setdefault("status", "confirmed")
+                    out.append(("{}.{}[{}]".format(DK.LEGACY_DICT_KEY, level, index), item))
+    return out, pending_out
 
 
 def main() -> int:
@@ -133,7 +164,7 @@ def main() -> int:
         return 4
 
     report = json.loads(args.report.read_text(encoding="utf-8"))
-    entries = collect(report)
+    entries, pending = collect(report)
     errors = []
     for path, defect in entries:
         before = len(errors)
@@ -149,13 +180,20 @@ def main() -> int:
     # 键集合与 collect() 的 CONTAINER_KEYS 严格一致（含 findings/diffs），否则
     # 「产物只有 findings」会因顶层无 defects 键被判 rc=6，与 collect 刚纳入的
     # findings 自相矛盾。
+    # 【审查修复·M1 配套】dict 形 diffs{high,medium,low}（模板主报告形状）同样是
+    # 「显式存在缺陷容器」——旧版只认列表值，按模板写的报告被误判「忘填缺陷数组」
+    # rc=6。F25 要区分的是「忘填」与「真零」，dict 形显然不是忘填。
     if args.strict and not any(
-            isinstance(report.get(k), list) for k in DK.CONTAINER_KEYS):
+            isinstance(report.get(k), list) for k in DK.CONTAINER_KEYS) \
+            and not _has_legacy_dict_diffs(report):
         errors.append("严格模式：report 缺少显式缺陷数组键（%s 任一，"
                       "允许空数组但键必须存在）——「忘填」与「真零缺陷」必须可区分"
                       % "/".join(DK.CONTAINER_KEYS))
 
-    result = {"checked": len(entries), "errors": len(errors), "strict": args.strict,
+    # 【审查修复·H2 配套】checked 含待复核项（可见性不变），另列 defects/pendingChecks
+    # 细分计数供上层对账；dimensionsCovered 仍只统计缺陷条目（待复核项无 dimension）。
+    result = {"checked": len(entries) + len(pending), "defects": len(entries),
+              "pendingChecks": len(pending), "errors": len(errors), "strict": args.strict,
               "dimensionsCovered": sorted({str(d.get("dimension")) for _, d in entries if d.get("dimension")})}
     if args.write:
         if errors:

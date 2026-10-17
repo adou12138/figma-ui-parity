@@ -583,15 +583,20 @@ def _font_weight(value):
 def compare_pair(node, item, page_url, scenario, viewport, offsets=(0.0, 0.0), comparable=True,
                  incomparable_reason=None, color_skips=None, pair_confidence=None,
                  style_only=False) -> list:
-    # style_only：容器盒配对（F18 box-credit）专用——包装盒的几何尺寸随页面结构变化，
-    # 与设计 frame 的 rect 天然不可比，直接比会刷一批 confirmed 假缺陷。只放开样式层。
+    # style_only：容器盒配对（F18 box-credit / 第二次机会 box-to-text-item）专用——
+    # 包装盒的几何尺寸随页面结构变化，与设计 frame 的 rect 天然不可比，直接比会刷一批
+    # confirmed 假缺陷。只放开样式层。
+    # 【审查修复·A1】box-to-text-item（设计无文本节点 ↔ 带文本页面项的第二次机会
+    # 配对）旧版漏设 style_only：按钮 FRAME 的 rect vs 页面文本 span 的 rect 天然
+    # 不等（frame 200×48 vs span 80×20），x/y/w/h 四条几何假缺陷每轮必刷。与
+    # box-credit 同口径豁免几何类，样式层照比。
     # 【审查修复】此专属原因**只在 style_only 时存在**：原写法无条件构造出非空常量，
     # 下面的 `geom_only_reason or incomparable_reason` 于是恒取前者 → incomparable_reason
-    # 形参彻底失效，视口不一致这类真实原因被错标成「box-credit 只比对样式层」。
+    # 形参彻底失效，视口不一致这类真实原因被错标成「容器盒配对只比对样式层」。
     # 更糟的是同一份 JSON 的 comparability.reason 存的仍是真值，报告内自相矛盾。
     geom_only_reason = (None if not style_only else
-                        "容器盒配对（box-credit）只比对样式层：包装盒的位置/尺寸随页面结构变化，"
-                        "不据此判缺陷（设计容器自身的几何请用 --mapping 显式配对）")
+                        "容器盒配对（box-credit / box-to-text-item）只比对样式层：包装盒的位置/尺寸"
+                        "随页面结构变化，不据此判缺陷（设计容器自身的几何请用 --mapping 显式配对）")
     diffs = []
     element = {
         "selector": item.get("sel") or item.get("selector"),
@@ -872,7 +877,10 @@ def main() -> int:
                                   offsets=offsets, comparable=comparable, incomparable_reason=incomparable_reason,
                                   color_skips=color_skips,
                                   pair_confidence=rec.get("pairConfidence"),
-                                  style_only=(rec.get("pairRole") == "box-credit")))
+                                  # 【审查修复·A1】两种容器盒配对（box-credit / box-to-text-item）
+                                  # 都豁免几何类：后者是设计 frame 配页面文本项，rect 口径天然
+                                  # 不可比，不豁免会每轮刷 x/y/w/h 四条几何假缺陷。
+                                  style_only=rec.get("pairRole") in ("box-credit", "box-to-text-item")))
     real = [d for d in diffs if d["status"] == "confirmed"]
 
     result = {

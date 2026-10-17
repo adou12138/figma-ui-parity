@@ -17,6 +17,9 @@ import defect_keys as DK
 
 ITEM_KEYS = DK.CONTAINER_KEYS
 
+# 历史 dict 形容器的严重度桶序（与 gen_excel_fallback 的消费顺序一致：高→中→低）
+_SEVERITY_ORDER = ("high", "medium", "low")
+
 
 def extract_items(data) -> tuple:
     if isinstance(data, list):
@@ -26,6 +29,20 @@ def extract_items(data) -> tuple:
             value = data.get(key)
             if isinstance(value, list):
                 return value, key
+        # 【审查修复·M1】历史 dict 形容器：diffs 是 {"high": [...], "medium": [...],
+        # "low": [...]} 按严重度分桶（defect_keys.LEGACY_DICT_KEY，主报告模板
+        # references/report-templates.md 的 diffs 段即此形状，gen_excel_fallback
+        # 早已消费）。旧版只认列表形容器，按模板写的报告在这里收 0 条，全部缺陷
+        # 在归一链路静默蒸发。现与 gen_excel_fallback 同一桶序合并全部桶；
+        # 桶值非列表的键跳过不猜（不把 {"diffs": {"meta": {...}}} 之类误判成分桶）。
+        legacy = data.get(DK.LEGACY_DICT_KEY)
+        if isinstance(legacy, dict):
+            merged = []
+            for level in _SEVERITY_ORDER:
+                bucket = legacy.get(level)
+                if isinstance(bucket, list):
+                    merged.extend(bucket)
+            return merged, "diffs:severity-buckets"
     return [], None
 
 

@@ -228,7 +228,11 @@ def node_model(node: dict, frame_origin: dict | None = None) -> dict:
         model["text"] = {
             "characters": node.get("characters"),
             "fontFamily": style.get("fontFamily") or (style.get("fontName") or {}).get("family"),
-            "fontPostScriptName": style.get("fontPostScriptName") or (style.get("fontName") or {}).get("family"),
+            # 【审查修复·P2 回落值错误】旧版缺失时回落到 fontName.family——family
+            # 是字体族名（"PingFang SC"），不是 PostScript 名（"PingFangSC-Semibold"），
+            # 拿族名冒充 PostScript 名会误导下游字体核对。缺失就留 None：
+            # 真实缺失可见，优于错误值冒充。
+            "fontPostScriptName": style.get("fontPostScriptName"),
             "fontWeight": font_weight(style),
             "fontSize": round2(font_size),
             "lineHeight": line_height(style.get("lineHeight") or {}, font_size),

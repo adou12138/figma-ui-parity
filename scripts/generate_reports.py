@@ -67,6 +67,21 @@ def collect_defects(data) -> list:
         value = data.get(key)
         if isinstance(value, list):
             return [d for d in value if isinstance(d, dict)]
+    # 【审查修复·M1 配套】历史 dict 形容器：diffs 是 {"high": [...], "medium": [...],
+    # "low": [...]} 按严重度分桶（主报告模板 references/report-templates.md 的 diffs
+    # 段即此形状）。旧版只认列表值，按模板写的报告在此收 0 条——缺陷进了
+    # normalize_evidence/validate_defects 却在最终交付件（HTML/CSV/JSON）静默蒸发。
+    # 现与 normalize_evidence.extract_items 同口径：列表形键全未命中时按高→中→低
+    # 合并分桶；桶值非列表的键跳过不猜（不把 {"diffs": {"meta": {...}}} 误判成分桶）。
+    legacy = data.get("diffs")
+    if isinstance(legacy, dict):
+        merged = []
+        for level in ("high", "medium", "low"):
+            bucket = legacy.get(level)
+            if isinstance(bucket, list):
+                merged.extend(bucket)
+        if merged:
+            return [d for d in merged if isinstance(d, dict)]
     return []
 
 

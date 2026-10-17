@@ -226,5 +226,39 @@ class SharedKeyTableTests(unittest.TestCase):
             % (sorted(produced), sorted(DK.CONTAINER_KEYS)))
 
 
+class GenerateReportsDictDiffsTests(unittest.TestCase):
+    """generate_reports.collect_defects 必须认 dict 形 diffs{high,medium,low}。
+
+    主报告模板 references/report-templates.md 的 diffs 段即此形状：旧版只扫
+    列表值，按模板写的报告在最终交付件（HTML/CSV/JSON）收 0 条缺陷——
+    normalize_evidence/validate_defects 都认（M1 修复），唯独交付层蒸发。
+    """
+
+    def _collect(self, payload):
+        import generate_reports
+        return generate_reports.collect_defects(payload)
+
+    def test_dict_buckets_merged_high_first(self):
+        out = self._collect({"diffs": {
+            "high": [{"id": "h1"}],
+            "medium": [{"id": "m1"}, {"id": "m2"}],
+            "low": [{"id": "l1"}],
+        }})
+        self.assertEqual([d["id"] for d in out], ["h1", "m1", "m2", "l1"])
+
+    def test_list_keys_take_priority_over_dict_diffs(self):
+        """列表形容器优先于 dict 形回落，与 normalize_evidence.extract_items 同序。"""
+        out = self._collect({"defects": [{"id": "d1"}],
+                             "diffs": {"high": [{"id": "h1"}]}})
+        self.assertEqual([d["id"] for d in out], ["d1"])
+
+    def test_non_bucket_dict_not_misread(self):
+        """diffs 是 dict 但不是分桶（如 {"meta": {...}}）时收 0 条，不猜。"""
+        self.assertEqual(self._collect({"diffs": {"meta": {"total": 1}}}), [])
+        # 部分桶非列表：只收真列表桶
+        out = self._collect({"diffs": {"high": [{"id": "h1"}], "meta": {"x": 1}}})
+        self.assertEqual([d["id"] for d in out], ["h1"])
+
+
 if __name__ == "__main__":
     unittest.main()

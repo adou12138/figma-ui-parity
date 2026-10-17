@@ -66,13 +66,21 @@ class StartGateTests(unittest.TestCase):
                 "--root", tmp,
                 "--workdir", "parity-test",
             )
-            self.assertEqual(proc.returncode, 0, proc.stderr)
+            # 【审查修复·环境耦合】依赖不齐的环境（如未装 playwright/node 的机器、
+            # 低版本 Python）上 start_test 走 unavailable 分支返回 3（F49：阻断但
+            # manifest 必须照写）——旧版无条件断言 rc==0，在这种环境必红。
+            # rc∈{0,3} 都是正常门控行为，分别锁定各自分支的完整语义。
+            self.assertIn(proc.returncode, (0, 3), proc.stderr)
             result = json.loads(proc.stdout)
             self.assertTrue(result["started"])
             manifest = json.loads((Path(tmp) / "parity-test" / "run-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["safetyPolicy"], "staticOnly")
             self.assertFalse(manifest["testEnvironmentConfirmed"])
             self.assertEqual(manifest["writeInterception"], "abort")
+            if proc.returncode == 0:
+                self.assertEqual(result["status"], "ready")
+            else:
+                self.assertEqual(result["status"], "blocked")
 
 
 if __name__ == "__main__":

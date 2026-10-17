@@ -74,15 +74,27 @@ def main() -> int:
             entry["expiredDays"] = (today - deadline).days
             expired.append(entry)
             continue
+        # 【审查修复·P2 语义矛盾】被判 over_broad 的条目旧版**同时**进 effective——
+        # 消费方（比对脚本）读 effective 就真的屏蔽了该区域，而 --enforce 门禁又因
+        # over_broad 报失败：同一份产物既"生效"又"不该生效"，门禁与实际行为脱节。
+        # 改为：over_broad（含缺到期信息 / 选择器过于宽泛 / diff 无定位）的条目
+        # **不进 effective**——门禁点名要复核的忽略区不得静默继续屏蔽，需人工
+        # 补全（expiresAt/reviewedAt/精确 selector/bbox）后才重新生效。
+        entry_over_broad = False
         if deadline is None:
             entry["note"] = "未声明 expiresAt 或 reviewedAt，无法判断是否过期"
             over_broad.append({"id": rid, "reason": "缺少到期信息，需补 expiresAt 或 reviewedAt"})
+            entry_over_broad = True
         selector = str(region.get("selector") or "").strip().lower()
         if selector in BROAD_SELECTORS:
             over_broad.append({"id": rid, "reason": "忽略选择器过于宽泛：{}".format(selector)})
+            entry_over_broad = True
         applies = region.get("appliesTo") or []
         if "diff" in applies and not region.get("bbox") and not selector:
             over_broad.append({"id": rid, "reason": "appliesTo 含 diff 但既无 selector 也无 bbox"})
+            entry_over_broad = True
+        if entry_over_broad:
+            continue
         effective.append(entry)
 
     result = {

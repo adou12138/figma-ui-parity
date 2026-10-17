@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.31.7
+version: 4.32.0
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -198,7 +198,7 @@ Figma URL 必须优先路由到已连接的 Figma MCP，调用设计数据接口
 - `staticOnly`：不执行任何交互，仅做静态可点击性、样式、DOM、ARIA、截图和无副作用探测。
 - `danger`：在 `all` 且 `testEnvironmentConfirmed=true` 时允许点击和执行；必须保留操作前后证据并记录不可逆风险。其他策略下不点击，只做静态检查并标记人工或隔离测试环境验证。
 
-若用户未选择，安全策略为 `unselected`，所有交互相关维度必须标记 `notRun:未获得本次安全策略授权`，不得以默认安全模式代替确认。选择 `all` 但未记录 `testEnvironmentConfirmed=true` 时，必须拒绝执行 caution/danger 操作并将其标记为 `notRun:未确认隔离测试环境`。命中测试须多点采样，记录 `selector + nth`，处理 dialog/下载/新页，点击后清理副作用。隐藏容器内尺寸为 0 的按钮记为 **`zero-size`**（`button_audit.js:76/143/205`，归入 `hidden` 列表，产物输出 `hidden` / `hiddenCount`；`notObservable` 一词当前不在产品代码里使用），重复列表按钮按组抽样并记录 `duplicateCount`。
+若用户未选择，安全策略为 `unselected`，所有交互相关维度必须标记 `notRun:未获得本次安全策略授权`，不得以默认安全模式代替确认。选择 `all` 但未记录 `testEnvironmentConfirmed=true` 时，必须拒绝执行 caution/danger 操作并将其标记为 `notRun:未确认隔离测试环境`。命中测试须多点采样，记录 `selector + nth`，处理 dialog/下载/新页，点击后清理副作用。隐藏容器内尺寸为 0 的按钮记为 **`zero-size`**（`button_audit.js:76/115/169`，归入 `hidden` 列表，产物输出 `hidden` / `hiddenCount`；`notObservable` 一词当前不在产品代码里使用），重复列表按钮按组抽样并记录 `duplicateCount`。
 
 ### 8. 缺陷归一、去重与校验
 

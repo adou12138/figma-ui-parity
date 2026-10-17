@@ -23,20 +23,21 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_POOL = HERE.parent / "assets" / "defect_patterns.json"
-ITEM_KEYS = ("diffs", "styleDiffs", "defects", "findings", "issues", "violations")
+# 【审查修复·C1】入口键单一来源：此前本地维护 ITEM_KEYS 副本且顺序与
+# defect_keys.CONTAINER_KEYS 分叉（diffs 排第一、还缺 defectList）——报告同时含
+# diffs 与 styleDiffs 时，归一链（CONTAINER_KEYS 序）取 styleDiffs、模式池取
+# diffs，两路消费**不同的数组**：styleDiffs 的 confirmed 缺陷进不了池，
+# diffs 里的 withinTolerance/pending 噪声反而每轮自动入池，风险排序被噪声灌满。
+# 改为直接复用 normalize_evidence.extract_items（键序、dict 形分桶、形状判定
+# 永远同源——defect_keys.py 是唯一键表，见该文件头部的历史教训）。
+import normalize_evidence as NE  # noqa: E402
 SEV_RANK = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
 
 def extract_items(data):
-    """与 normalize_evidence 同一套入口键，兼容各生产者产物。"""
-    if isinstance(data, list):
-        return [i for i in data if isinstance(i, dict)]
-    if isinstance(data, dict):
-        for key in ITEM_KEYS:
-            value = data.get(key)
-            if isinstance(value, list):
-                return [i for i in value if isinstance(i, dict)]
-    return []
+    """与 normalize_evidence 完全同一套入口键与容器形状（单一来源）。"""
+    items, _source_key = NE.extract_items(data)
+    return [i for i in items if isinstance(i, dict)]
 
 
 def _norm(text, n=60):
@@ -100,15 +101,23 @@ def cmd_merge(pool_path, src):
     items = extract_items(data)
     pool = load_pool(pool_path)
     pats = pool.setdefault("patterns", [])
-    known = {p.get("fingerprint") or fingerprint(p) for p in pats}
+    known = {p.get("fingerprint") or fingerprint(p): p for p in pats}
     added = 0
+    # 【审查修复·P2 hits 累加】旧版命中已知指纹直接 continue——池里 31 条模式
+    # 没有一条有 hits 字段（实测 Counter({None: 31})），"按命中频次看哪些模式
+    # 高发"的权重机制形同虚设：同一模式每轮命中零痕迹，无法区分"高频复发"与
+    # "一次性偶发"。命中即累加 hits（旧条目缺省按 1 起算）并刷新 lastSeen，
+    # 只有池内容真变化才落盘（幂等不重写）。
+    hit_updated = False
     for item in items:
         fp = fingerprint(item)
         if fp in known:
+            p = known[fp]
+            p["hits"] = int(p.get("hits", 1)) + 1
+            p["lastSeen"] = Path(src).name
+            hit_updated = True
             continue
-        known.add(fp)
-        added += 1
-        pats.append({
+        entry = {
             "id": "DP-AUTO-%04d" % (len(pats) + 1),
             "dimension": str(item.get("dimension") or ""),
             "symptom": _norm(item.get("symptom") or item.get("name") or "", 120),
@@ -116,8 +125,12 @@ def cmd_merge(pool_path, src):
             "severity": severity_of(item),
             "source": "merged:%s" % Path(src).name,
             "fingerprint": fp,
-        })
-    if added:
+            "hits": 1,
+        }
+        pats.append(entry)
+        known[fp] = entry
+        added += 1
+    if added or hit_updated:
         save_pool(pool_path, pool)
     print("并入完成：新增 %d 条模式（输入 %d 条缺陷），池现 %d 条 -> %s"
           % (added, len(items), len(pats), pool_path))

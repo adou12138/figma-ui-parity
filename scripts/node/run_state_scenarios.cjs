@@ -154,10 +154,17 @@ function residueFindings(before, after) {
 async function runDark(page) {
   // 【F41】stabilize.js 注入的 `color-scheme: light !important` 会压过
   // emulateMedia(dark) 的 UA 暗色渲染 → 7.25「背景近白」判定系统性假阳
-  // （或掩盖真缺陷）。探测前移除该 style，探测后由调用方页面恢复流程重建。
+  // （或掩盖真缺陷）。
+  // 【审查修复】旧版把整个含 color-scheme 的 <style> 块删掉——那是 stabilize.js
+  // 的 STABILIZE_CSS，除 color-scheme 外还有禁动画/隐藏抖动元素等全部稳定化
+  // 规则，且注释声称"探测后由调用方页面恢复流程重建"实际没有任何调用方重建：
+  // 后续 7.32/7.33 场景在失去全部稳定化规则的页面上跑，抖动/动画干扰系统性
+  // 回归。改为只摘除 color-scheme 声明本身，其余稳定化规则全程在场，无需重建。
   await page.evaluate(() => {
     document.querySelectorAll('style').forEach((s) => {
-      if (s.textContent && s.textContent.indexOf('color-scheme') !== -1) s.remove();
+      if (s.textContent && s.textContent.indexOf('color-scheme') !== -1) {
+        s.textContent = s.textContent.replace(/color-scheme\s*:\s*[^;}]+;?/gi, '');
+      }
     });
   }).catch(() => {});
   await page.emulateMedia({ colorScheme: 'dark' });
