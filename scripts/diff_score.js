@@ -369,13 +369,24 @@ if (require.main === module) {
   const cropToCommon = process.argv.includes('--crop-to-common');
   const edgeFactor = cliArg('edge-factor');
   const dprA = cliArg('dpr-a'), dprB = cliArg('dpr-b');
+  // 【审查修复·P2】parseInt("16px")==NaN 时 threshold!=null → NaN 一路传进
+  // diff()：所有像素比较（d>th / d<=th）与 NaN 比较恒 false——changed/weak
+  // 全为 0、diffScore 恒 0，rc=0 产出"完全一致"的假结论。非数字立即报错退出。
+  const thNum = threshold == null ? undefined : parseInt(threshold, 10);
+  if (thNum != null && !Number.isFinite(thNum)) {
+    console.error('ERROR: --threshold must be a number, got: ' + threshold); process.exit(2);
+  }
+  const efNum = edgeFactor == null ? undefined : parseFloat(edgeFactor);
+  if (efNum != null && !Number.isFinite(efNum)) {
+    console.error('ERROR: --edge-factor must be a number, got: ' + edgeFactor); process.exit(2);
+  }
   const r = diff(a, b, {
     out,
-    threshold: threshold == null ? undefined : parseInt(threshold, 10),
+    threshold: thNum,
     ignore,
     enhanced,
     cropToCommon,
-    edgeFactor: edgeFactor == null ? undefined : parseFloat(edgeFactor),
+    edgeFactor: efNum,
     dprA: dprA == null ? undefined : parseFloat(dprA),
     dprB: dprB == null ? undefined : parseFloat(dprB),
   });

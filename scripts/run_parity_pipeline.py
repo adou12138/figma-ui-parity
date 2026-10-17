@@ -17,7 +17,7 @@ def resolve_node() -> str:
     return shutil.which("node") or "node"
 
 
-def stage(name: str, command: list, dry_run: bool, log: dict) -> None:
+def stage(name: str, command: list, dry_run: bool, log: dict, stdout_path: Path = None) -> None:
     printable = " ".join(command)
     if dry_run:
         log[name] = {"status": "planned", "command": printable}
@@ -40,6 +40,15 @@ def stage(name: str, command: list, dry_run: bool, log: dict) -> None:
         "stdoutTail": (proc.stdout or "")[-400:],
         "stderrTail": (proc.stderr or "")[-400:],
     }
+    # 【审查修复·P2-12】此前 stage 只在 pipeline-log 里留 stdoutTail 400 字符，
+    # journey_coverage 的完整执行率矩阵（行×变体×verdict）出了管线就蒸发，
+    # 事后无法对账。stdout_path 指定时把完整 stdout 落盘（journey_coverage.cjs
+    # 输出纯 JSON，可直接作为产物消费）。仅 rc=0 且 stdout 非空时写，失败不产
+    # 半截产物。
+    if stdout_path is not None and proc.returncode == 0 and (proc.stdout or "").strip():
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        stdout_path.write_text(proc.stdout, encoding="utf-8")
+        log[name]["stdoutFile"] = str(stdout_path)
     print("[{}] {} (rc={})".format("ok" if proc.returncode == 0 else "fail", name, proc.returncode))
 
 
@@ -92,14 +101,18 @@ def main() -> int:
     # 四个维度「有场景、有 runner、无执行者」，产出恒 notRun。在 compare_fields
     # 之后自动跑一轮页面级状态场景（安全策略内，无需登录态之外的配置），
     # state_scenarios.json 存在时 assemble_report 已有接线会消费它。
-    if args.page_url and not args.dry_run:
+    # 【审查修复·P2-16】dry-run + --page-url 时旧版落进 else 记「缺少 --page-url」
+    # ——reason 与事实相反，按 reason 排障会去查一个不存在的缺失参数。对齐
+    # stabilize 的行为：有 page-url 就进 stage（dry-run 由 stage 记 planned，
+    # 呈现真实计划形态；真跑才执行）。
+    if args.page_url:
         stage("state_scenarios", [node, str(HERE / "node" / "run_state_scenarios.cjs"),
                                   "--url", args.page_url,
                                   "--out", str(workdir)],
               args.dry_run, log)
     else:
-        log.setdefault("state_scenarios", {
-            "status": "notRun", "reason": "缺少 --page-url（页面级状态场景需要目标 URL）"})
+        log["state_scenarios"] = {
+            "status": "notRun", "reason": "缺少 --page-url（页面级状态场景需要目标 URL）"}
     audit_dir = workdir / "button-audit"
     if audit_dir.exists():
         stage("button_report", [node, str(HERE / "gen_button_report.cjs"), "--dir", str(audit_dir), "--out", str(outdir)],
@@ -110,8 +123,11 @@ def main() -> int:
     journey = workdir / "journey.json"
     coverage = workdir / "coverage.json"
     if journey.exists() and coverage.exists():
+        # 【审查修复·P2-12】journey_coverage 的完整 JSON 结果落盘到 outdir——
+        # 旧行为只留 stdoutTail 400 字符，执行率矩阵出了管线就没了。
         stage("journey_coverage", [node, str(HERE / "journey_coverage.cjs"), "--journey", str(journey),
-                                   "--coverage", str(coverage)], args.dry_run, log)
+                                   "--coverage", str(coverage)],
+              args.dry_run, log, stdout_path=outdir / "journey_coverage.json")
     else:
         log["journey_coverage"] = {"status": "notRun", "reason": "缺少 journey.json 或 coverage.json"}
 
@@ -141,7 +157,13 @@ def main() -> int:
                                      "--output", str(workdir / "scenarios.json")] + patterns_args + passthrough,
               args.dry_run, log)
     else:
-        log["compare_fields"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json"}
+        # 【审查修复·P2-9】陈旧产物消费至少要留痕：本轮没跑 compare_fields，但
+        # workdir 里残留的旧 styleDiffs.json 仍会被下方 assemble_report 消费——
+        # 不短路（设计取舍：只重出报告是合法用法），但 reason 必须说清证据来源
+        # 是上一轮的，报告不得冒充本轮实测。
+        stale = "；注意：检测到旧 styleDiffs.json，assemble_report 将把它当陈旧证据消费（非本轮实测）" \
+            if style_diffs.exists() else ""
+        log["compare_fields"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json" + stale}
         log["discover_scenarios"] = {"status": "notRun", "reason": "缺少 --design-json 或 --page-json"}
 
     if args.report and args.report.exists():
@@ -235,6 +257,20 @@ def main() -> int:
         outdir.mkdir(parents=True, exist_ok=True)
         log_file.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
         print("日志: {}".format(log_file))
+    # 【审查修复·P2-9】非门禁 stage 失败仍 return 0——stabilize 打不开页面、
+    # compare_fields 崩掉时管线"绿着"退出，下游只看到全 notRun 的报告还以为
+    # 一切正常。失败必须反映在退出码与 pipeline-log（pipelineStatus=degraded
+    # + failedStages 清单），不静默。dry-run（planned）不算失败；notRun 是
+    # 可选产物缺失的既定语义，也不算。
+    failed_stages = sorted(n for n, v in log.items()
+                           if isinstance(v, dict) and v.get("status") == "failed")
+    if failed_stages and not args.dry_run:
+        log["pipelineStatus"] = "degraded"
+        log["failedStages"] = failed_stages
+        log_file.write_text(json.dumps(log, ensure_ascii=False, indent=2), encoding="utf-8")
+        print("警告：{} 个 stage 失败：{}（pipelineStatus=degraded）".format(
+            len(failed_stages), ", ".join(failed_stages)), file=sys.stderr)
+        return 1
     return 0
 
 

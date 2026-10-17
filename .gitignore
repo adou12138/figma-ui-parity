@@ -11,3 +11,6 @@ auth_info.json
 *.storage.json
 *.cookies.json
 .vp_profile*/
+
+# 过程文档不入库（本地留存）
+process/

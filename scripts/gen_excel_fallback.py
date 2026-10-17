@@ -69,7 +69,11 @@ def _grade(sev) -> str:
     【F37】compare_fields 产 P0-P3（7.8 文案缺陷 severity=P1），旧映射只认
     high/medium/low——列表形缺陷行的「等级」整列原样落入 P0/P1，LEVEL_FILL
     判色失效、Excel 全部无底色，一眼分不出轻重。"""
+    # 【审查修复·P2】severity 为显式 null 时 str(None)=="none" 会一路穿透到
+    # 等级列（字面 "none"，判色失效）——统一空值归一后再走映射。
     s = str(sev if sev is not None else "").strip().lower()
+    if s in ("none", "null"):
+        s = ""
     if s in ("p0", "p1", "high"):
         return "高"
     if s in ("p2", "medium", "mid"):
@@ -100,7 +104,9 @@ def rows_from_report(report: dict):
             for d in val:
                 if not isinstance(d, dict):
                     continue
-                sev = str(d.get("severity", "")).lower()
+                # 【审查修复·P2】severity 为显式 null 时 str(None)=="none"——
+                # 等级列出现字面 "none" 且判色失效，改为空值归一走 _grade 回落。
+                sev = str(d.get("severity") or "").lower()
                 rows.append({
                     "等级": _grade(sev or d.get("severity")),
                     "缺陷类型": d.get("category", d.get("type", "视觉样式")),
@@ -129,7 +135,9 @@ def rows_from_report(report: dict):
                 "元素定位": loc_str(d.get("element")),
                 "备注(附图)": d.get("screenshot", d.get("note", "")),
             })
-    for vp in report.get("responsive", {}).get("perViewport", []):
+    # 【审查修复·P2】responsive/pendingChecks 键存在但值为 null 时
+    # dict.get(key, default) 不取 default → None.get()/迭代 None 直接崩溃。
+    for vp in ((report.get("responsive") or {}).get("perViewport") or []):
         for iss in vp.get("issues", []):
             rows.append({
                 "等级": _grade(iss.get("severity", "medium")),
@@ -150,7 +158,7 @@ def pending_rows_from_report(report: dict):
     """从 report.json 提取待确认问题行：pendingChecks（需视觉核对 / 无法自动判定项）。
     每条必须带确认位置与页面元素，便于人工回查页面核实。"""
     rows = []
-    for pc in report.get("pendingChecks", []):
+    for pc in (report.get("pendingChecks") or []):
         el = pc.get("element") or {}
         confirm = pc.get("confirmLocation") or ""
         if not confirm:  # 兜底：设计参考 ↔ 元素定位
@@ -174,7 +182,7 @@ def main():
         sys.exit(__doc__)
     try:
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font
+        from openpyxl.styles import Alignment, Font, PatternFill
         from openpyxl.utils import get_column_letter
     except ImportError:
         sys.exit("缺少 openpyxl：请先执行 pip install openpyxl")

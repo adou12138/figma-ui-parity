@@ -150,5 +150,47 @@ class ScenarioCoverageTests(unittest.TestCase):
             self.assertIn("低于下限", r.stderr)
 
 
+class TestRound2EmptyPlanGate(unittest.TestCase):
+    """【审查修复·P2-13】计划为空时门禁必须说出根因（「计划为空」），
+    而不是把「根本没产出计划」误导成「执行率 0% 低于下限」。"""
+
+    def test_empty_plan_reports_root_cause(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_f = Path(tmp) / "plan.json"
+            plan_f.write_text(json.dumps({"scenarios": []}, ensure_ascii=False), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(SCRIPTS / "scenario_coverage.py"),
+                                "--plan", plan_f, "--enforce", "--min-rate", "0.5"],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("计划为空", r.stderr)
+            self.assertNotIn("低于下限", r.stderr, "空计划不得落成裸 0% 文案")
+
+    def test_all_exempted_counts_as_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_f = Path(tmp) / "plan.json"
+            plan_f.write_text(json.dumps({"scenarios": [
+                {"id": "S-1", "dimension": "7.1", "safety": "safe"}]},
+                ensure_ascii=False), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(SCRIPTS / "scenario_coverage.py"),
+                                "--plan", plan_f, "--exempt-dimensions", "7.1",
+                                "--enforce"], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("全部维度被豁免", r.stderr)
+
+    def test_nonempty_plan_gate_untouched(self):
+        """有计划时 min-rate 门禁语义不变（回归保护）。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            plan_f = Path(tmp) / "plan.json"
+            plan_f.write_text(json.dumps({"scenarios": [
+                {"id": "S-1", "dimension": "7.1", "safety": "safe"},
+                {"id": "S-2", "dimension": "7.1", "safety": "safe"}]},
+                ensure_ascii=False), encoding="utf-8")
+            r = subprocess.run([sys.executable, str(SCRIPTS / "scenario_coverage.py"),
+                                "--plan", plan_f, "--enforce", "--min-rate", "0.8"],
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("低于下限", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
