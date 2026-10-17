@@ -70,9 +70,11 @@ async function resolvePlaywright() {
   for (const c of candidates) { try { return require(c); } catch (e) { /* next */ } }
   return null;
 }
-// 跨平台解析 Playwright 自带的 Chromium（与 run_official_extraction.cjs 一致）。
+// 跨平台解析 Chromium/Chrome/Edge（与 check_environment.py 的 browser_candidates 同口径）。
 function resolveChrome() {
   const plat = os.platform();
+  const candidates = [];
+  if (process.env.PLAYWRIGHT_CHROME_PATH) candidates.push(process.env.PLAYWRIGHT_CHROME_PATH);
   const bases = [];
   if (process.env.PLAYWRIGHT_BROWSERS_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH !== '0') {
     bases.push(process.env.PLAYWRIGHT_BROWSERS_PATH);
@@ -82,7 +84,7 @@ function resolveChrome() {
   else if (plat === 'darwin') bases.push(path.join(home, 'Library', 'Caches', 'ms-playwright'));
   else bases.push(path.join(home, '.cache', 'ms-playwright'));
   const relByPlat = plat === 'win32'
-    ? ['chrome-win/chrome.exe', 'chrome-win64/chrome.exe']
+    ? ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe']
     : plat === 'darwin'
       ? ['chrome-mac/Chromium.app/Contents/MacOS/Chromium', 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium']
       : ['chrome-linux/chrome'];
@@ -92,11 +94,25 @@ function resolveChrome() {
     for (const d of dirs) {
       for (const r of relByPlat) {
         const p = path.join(base, d, r);
-        if (fs.existsSync(p)) return p;
+        if (fs.existsSync(p)) candidates.push(p);
       }
     }
   }
-  return null;
+  // 【F42b】系统级浏览器兜底：ms-playwright 目录缺失时不再直接判「找不到浏览器」，
+  // mac/linux 也能命中系统 Chrome/Edge（旧版三处解析全 Windows-only）。
+  if (plat === 'win32') candidates.push(
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe');
+  else if (plat === 'darwin') candidates.push(
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium');
+  else candidates.push(
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/microsoft-edge');
+  return candidates.find(p => fs.existsSync(p)) || null;
 }
 
 /**

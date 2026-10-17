@@ -1,7 +1,7 @@
 ---
 name: "figma-ui-parity"
 description: "以 Figma 设计稿为基准，对本地或远程页面执行智能 UI 还原、响应式、交互可用性、可访问性、异常数据和视觉回归检查。自动生成元素级场景，双向盘点设计与页面元素，验证按钮及浮层真实行为，统一去重缺陷并输出 HTML、JSON、CSV 报告。含运行期观测（JS 异常 / 交互期网络失败 / 重复提交 / 元素遮挡）与组合场景（`--combo-depth`：加深异常数据与逐断点展开）及缺陷模式池。当用户要求 Figma 对比、UI 走查、视觉回归、响应式检查、设计还原度或尽可能发现页面 bug 时调用。"
-version: 4.31.6
+version: 4.31.7
 author: TestCase
 agent_created: true
 category: ui-testing
@@ -43,9 +43,11 @@ references 里的 `7.x` 一律指检查维度，不指流程步骤。
 | 响应式 | `references/responsive.md` |
 | 行为、健壮性与资源偏好维度 | `references/bug-driven-checks.md`、`references/button-audit.md`、`references/aria-diff.md` |
 | 状态覆盖 | `references/state-journey.md` |
+| 跨页用户旅程（7.39） | `references/journeys.md` |
 | 运行期观测（异常/网络/重复提交/遮挡） | `references/runtime-observability.md` |
 | 回归 | `references/baseline-regression.md` |
 | 报告与门禁 | `references/report-templates.md`、`references/gates.md` |
+| 真实环境验证 | `references/real-env-verification.md` |
 | 脚本命令与执行顺序 | `references/script-orchestration.md` |
 | 失败恢复 | `references/error-handling.md` |
 | 机器可读契约与缺陷模式池 | `schemas/check-dimensions.json`、`schemas/scenario-coverage.schema.json`、`schemas/defect.schema.json`、`assets/defect_patterns.json` |

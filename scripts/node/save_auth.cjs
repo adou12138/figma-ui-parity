@@ -24,24 +24,13 @@ const candidates = [
 if (process.env.PLAYWRIGHT_CORE_PATH) candidates.push(process.env.PLAYWRIGHT_CORE_PATH);
 for (const c of candidates) { try { pw = require(c); break; } catch (e) { } }
 if (!pw) { console.error('ERROR: playwright-core not found. npm i playwright-core'); process.exit(1); }
+// 【F42b】复用 scripts/stabilize.js 的跨平台 resolveChrome（Win/Mac/Linux + 系统浏览器兜底），
+// 不再自行维护一份 Windows-only 解析（旧版 mac/linux 恒找不到浏览器）。
+const { resolveChrome: resolveChromeShared } = require('../stabilize.js');
 function resolveChrome() {
-  const candidates = [];
-  if (process.env.PLAYWRIGHT_CHROME_PATH) candidates.push(process.env.PLAYWRIGHT_CHROME_PATH);
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH !== '0'
-    ? process.env.PLAYWRIGHT_BROWSERS_PATH
-    : path.join(require('os').homedir(), 'AppData', 'Local', 'ms-playwright');
-  if (fs.existsSync(base)) {
-    for (const d of fs.readdirSync(base).filter(d => /^chromium-/.test(d)).sort().reverse()) {
-      candidates.push(path.join(base, d, 'chrome-win64', 'chrome.exe'));
-    }
-  }
-  candidates.push(
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
-  );
-  return candidates.find(p => fs.existsSync(p)) || null;
+  const envPath = process.env.PLAYWRIGHT_CHROME_PATH;
+  if (envPath && fs.existsSync(envPath)) return envPath;
+  return resolveChromeShared();
 }
 const { restoreAuth, saveAuth, isLoginPage, DIR } = require('./auth.cjs');
 const PROFILE = arg('profile', path.join(process.cwd(), 'parity-test', '.vp_profile'));

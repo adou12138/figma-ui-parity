@@ -49,8 +49,6 @@ function verdictOf(b, clicked) {
 
 const rows = [];
 for (const p of pages) {
-  const bySel = {};
-  for (const r of (p.data.clickResults || [])) bySel[r.sel + '#' + (r.nth || 0)] = r;
   const clickMap = new Map((p.data.clickResults || []).map(r => [r.sel + '#' + (r.nth || 0), r]));
   for (const b of (p.data.static || [])) {
     const c = clickMap.get(b.sel + '#' + (b.nth || 0));

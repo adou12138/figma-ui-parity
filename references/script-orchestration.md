@@ -55,7 +55,7 @@ python scripts/run_parity_pipeline.py \
 |---|---|---|---|
 | `start_test.py` | 原始指令、Figma URL、页面 URL、安全策略 | `run-manifest.json`、环境状态 | 仅正式测试启动时运行；策略缺失或隔离环境未确认时阻断 |
 | `init_workdir.py` | 工作区根目录 | `parity-test/` 目录树、`.gitignore` 规则 | 幂等；只追加缺失的忽略行 |
-| `check_environment.py` | `skill-dependencies.json` | 就绪状态与缺失项 | 只输出脱敏状态；由启动门禁调用 |
+| `check_environment.py` | 无（8 项依赖检查硬编码在脚本内，**不读取** `skill-dependencies.json`） | 就绪状态与缺失项 | 只输出脱敏状态；由启动门禁调用 |
 | `enumerate_page_frames`（MCP 浅层读取，必要时按 Frame 分片） | Figma 文件/节点 JSON | `frame_map.json`（页面 Frame 清单与 URL 映射） | 识别页面级 FRAME，排除 COMPONENT/INSTANCE/局部子 Frame；文件过大时分片读取 |
 | `extract_design_fields.py` | Figma 页面 Frame JSON | `design_model.json`（单位统一换算为 px） | 字重名称→数值、行高/字距 PERCENT→px、渐变角度、多阴影保留顺序；坐标相对选定 Frame 原点 |
 | `collect_page_inventory.js` | 页面（`browser_evaluate`） | `page.json`（inventory 契约） | 零尺寸元素不入库；记录 `nth` |

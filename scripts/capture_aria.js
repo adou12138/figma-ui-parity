@@ -17,16 +17,8 @@ function resolvePlaywright() {
   for (const c of candidates) { try { return require(c); } catch (e) { /* next */ } }
   return null;
 }
-function resolveChrome() {
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH !== '0'
-    ? process.env.PLAYWRIGHT_BROWSERS_PATH
-    : path.join(require('os').homedir(), 'AppData', 'Local', 'ms-playwright');
-  if (fs.existsSync(base)) {
-    const dirs = fs.readdirSync(base).filter(d => /^chromium-/.test(d)).sort().reverse();
-    for (const d of dirs) { const p = path.join(base, d, 'chrome-win64', 'chrome.exe'); if (fs.existsSync(p)) return p; }
-  }
-  return null;
-}
+// 【F42b】复用 scripts/stabilize.js 的跨平台 resolveChrome，去掉 Windows-only 解析。
+const { resolveChrome } = require('./stabilize.js');
 
 async function isLoginPage(page) {
   return page.evaluate(() => {

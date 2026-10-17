@@ -33,7 +33,9 @@ const HEADED = process.argv.includes('--headed');
 const WAIT_LOGIN = process.argv.includes('--wait-login');
 const SAFETY_POLICY = arg('safety-policy', 'safe'); // all | safe | mockWrites | staticOnly
 const TEST_ENV_CONFIRMED = process.argv.includes('--test-environment-confirmed');
-const WRITE_POLICY = arg('write-policy', 'mock');   // mock（mock 成功响应）| abort（直接中断）| none（all 模式，真实发送）
+const WRITE_POLICY = arg('write-policy', SAFETY_POLICY === 'safe' ? 'abort' : SAFETY_POLICY === 'all' ? 'none' : 'mock');   // mock（mock 成功响应）| abort（直接中断）| none（all 模式，真实发送）
+// 【F46】默认写策略随安全策略推导，与 start_test.py 的 write_interception 映射
+// （safe→abort、mockWrites→mock、all→none）对齐；显式 --write-policy 仍优先。
 const CHROME = arg('chrome', null);
 const DESIGN_BUTTONS = arg('design-buttons', null);
 
@@ -48,19 +50,11 @@ function resolvePlaywright() {
   for (const c of candidates) { try { return require(c); } catch (e) { /* next */ } }
   return null;
 }
+// 【F42b】复用跨平台解析（Win/Mac/Linux + 系统浏览器兜底），不再自带 Windows-only 版本。
+const { resolveChrome: resolveChromeShared } = require('../stabilize.js');
 function resolveChrome() {
   if (CHROME && fs.existsSync(CHROME)) return CHROME;
-  const base = process.env.PLAYWRIGHT_BROWSERS_PATH && process.env.PLAYWRIGHT_BROWSERS_PATH !== '0'
-    ? process.env.PLAYWRIGHT_BROWSERS_PATH
-    : path.join(require('os').homedir(), 'AppData', 'Local', 'ms-playwright');
-  if (fs.existsSync(base)) {
-    const dirs = fs.readdirSync(base).filter(d => /^chromium-/.test(d)).sort().reverse();
-    for (const d of dirs) {
-      const p = path.join(base, d, 'chrome-win64', 'chrome.exe');
-      if (fs.existsSync(p)) return p;
-    }
-  }
-  return null;
+  return resolveChromeShared();
 }
 let pw = null;
 let chromePath = null;
@@ -69,7 +63,7 @@ if (require.main === module) {
   pw = resolvePlaywright();
   if (!pw) { console.error('ERROR: playwright-core not found. npm i playwright-core'); process.exit(1); }
   chromePath = resolveChrome();
-  if (!chromePath) { console.error('ERROR: chrome.exe not found under ms-playwright'); process.exit(1); }
+  if (!chromePath) { console.error('ERROR: 找不到可用 Chromium/Chrome/Edge；设置 PLAYWRIGHT_CHROME_PATH 或安装 playwright 浏览器后重试'); process.exit(1); }
   try { auth = require('./auth.cjs'); } catch (e) { /* optional */ }
 }
 
@@ -143,6 +137,9 @@ const PAGE_JS = {
 };
 
 async function isLoginPage(page) {
+  // 【F47】登录页判定统一到 auth.cjs（多信号，含「系统提示」标题信号），
+  // 消除此前 run_button_audit 与 auth.cjs 两份分叉信号集导致的识别漂移。
+  if (auth && typeof auth.isLoginPage === 'function') return auth.isLoginPage(page);
   return await page.evaluate(() => {
     const body = document.body ? document.body.innerText : '';
     return /login|signin/i.test(location.href || '') || /未登录|您还未登录|请先登录|请登录/.test(body) || /立即注册|忘记用户名|验证码登录|账号登录/.test(body);
@@ -210,10 +207,6 @@ function pairButtonsWithEvidence(design, pageBtns, fullTextElements) {
   const extraIconOnly = pageBtns.filter(b => !used.has(b.sel) && !(b.normText || b.text));
   return { paired, missingInPage: missing, designUnmatchedWeak: unmatchedWeak,
            extraInPage: extra, extraInPageIconOnly: extraIconOnly };
-}
-
-function pairButtons(design, pageBtns) {
-  return pairButtonsWithEvidence(design, pageBtns, []);
 }
 
 if (require.main !== module) module.exports = { normKey, pairButtonsWithEvidence };
@@ -329,7 +322,16 @@ if (require.main === module) (async () => {
       console.error('[x] safety-policy=all 需要 --test-environment-confirmed；拒绝执行 danger 操作');
       process.exitCode = 2;
     }
-    const clickablePool = pool.filter(b => ((canRunDanger) || b.risk !== 'danger') && (b.clickable.ok || isBlockedOnly(b)));
+    // 【F46】按安全策略分级放行点击，与 SKILL.md / run_state_scenarios.cjs / run_journeys.cjs 同口径：
+    //   staticOnly → 任何点击都不执行；safe → 仅 safe 级；mockWrites → safe+caution（已装写拦截）；
+    //   all+confirmed → 全部分级。旧版只挡 danger，staticOnly 下仍会点 safe/caution（违反 SKILL.md:196）。
+    const policyAllowsRisk = (risk) => {
+      if (SAFETY_POLICY === 'staticOnly') return false;
+      if (risk === 'danger') return canRunDanger;
+      if (risk === 'caution') return SAFETY_POLICY === 'all' || SAFETY_POLICY === 'mockWrites';
+      return true;
+    };
+    const clickablePool = pool.filter(b => policyAllowsRisk(b.risk) && (b.clickable.ok || isBlockedOnly(b)));
     // 【F44a】超出 MAX_CLICK 的部分必须记 skipped——「既不点也不记」= 那批按钮的
     // 交互验证静默蒸发，报告却显示「审计完成」。
     const queue = clickablePool.slice(0, MAX_CLICK);
@@ -338,13 +340,20 @@ if (require.main === module) (async () => {
       sel: b.sel, text: b.text, risk: b.risk, skipped: true,
       reason: '点击预算超限：pool ' + clickablePool.length + ' 超 MAX_CLICK ' + MAX_CLICK + '，未执行交互验证',
     }));
-    const skippedDanger = pool.filter(b => !canRunDanger && b.risk === 'danger');
-    skippedDanger.forEach(b => results.push({ sel: b.sel, text: b.text, risk: b.risk, skipped: true, reason: 'danger 级未点击：未取得 all + testEnvironmentConfirmed 授权' }));
+    const skippedPolicy = pool.filter(b => !policyAllowsRisk(b.risk) && (b.clickable.ok || isBlockedOnly(b)));
+    skippedPolicy.forEach(b => {
+      const reason = SAFETY_POLICY === 'staticOnly'
+        ? 'staticOnly 策略：不做任何页面交互（含 safe/caution/danger）'
+        : b.risk === 'danger'
+          ? 'danger 级未点击：未取得 all + testEnvironmentConfirmed 授权'
+          : b.risk + ' 级未点击：safety-policy=' + SAFETY_POLICY + ' 不允许交互';
+      results.push({ sel: b.sel, text: b.text, risk: b.risk, skipped: true, reason });
+    });
     if (overBudget.length) {
       console.warn('[warn] 点击预算超限：' + overBudget.length + ' 个按钮未交互验证（已记 skipped，'
         + '可用 --max 提高预算）');
     }
-    console.log('[i] 待点击 ' + queue.length + ' 个（跳过 danger ' + skippedDanger.length
+    console.log('[i] 待点击 ' + queue.length + ' 个（按策略跳过 ' + skippedPolicy.length
       + ' 个、预算外 ' + overBudget.length + ' 个）');
 
     for (const b of queue) {

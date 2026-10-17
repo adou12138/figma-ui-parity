@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only dependency check for figma-ui-parity v4.31.6."""
+"""Read-only dependency check for figma-ui-parity v4.31.7."""
 from __future__ import annotations
 import json, os, shutil, subprocess, sys
 from pathlib import Path
 
-VERSION = "4.31.6"
+VERSION = "4.31.7"
 checks = []
 def add(id, status, detail): checks.append({"id": id, "status": status, "detail": detail})
 
@@ -51,11 +51,26 @@ def browser_candidates():
 add("python-runtime", "ready" if sys.version_info >= (3, 10) else "unavailable", f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
 node = shutil.which("node")
 add("node-runtime", "ready" if node else "unavailable", "available" if node else "not-found")
+def local_playwright_core():
+    """向上逐级查找 ``<root>/cdp_driver/node_modules/playwright-core``。
+
+    【F45】旧版用固定下标 ``parents[3]`` 定址：脚本处于浅层布局（如
+    ``<repo>/scripts/check_environment.py``，parents 只到根目录）时直接抛
+    ``IndexError``，导致启动门禁整体崩溃。改为在 parents 链上逐级探测，
+    越界即自然结束并返回 None，不再崩溃。
+    """
+    for parent in Path(__file__).resolve().parents:
+        cand = parent / "cdp_driver" / "node_modules" / "playwright-core"
+        if cand.exists():
+            return cand
+    return None
+
+
 playwright_ok = False
 if node:
     probe_code = "require('playwright-core')"
-    local_pw = Path(__file__).resolve().parents[3] / "cdp_driver" / "node_modules" / "playwright-core"
-    if local_pw.exists():
+    local_pw = local_playwright_core()
+    if local_pw is not None:
         probe_code = f"require({json.dumps(str(local_pw))})"
     # 【F42】subprocess 必须带 timeout：node -e 卡死时门禁挂死整条流水线
     try:

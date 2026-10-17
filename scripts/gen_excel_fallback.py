@@ -15,24 +15,28 @@ from pathlib import Path
 
 import defect_keys as DK
 
-try:
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
-except ImportError:
-    sys.exit("缺少 openpyxl：请先执行 pip install openpyxl")
-
 HEADERS = ["序号", "等级", "缺陷类型", "功能模块", "问题描述", "解决方案", "元素定位", "备注(附图)"]
 VALID_TYPES = [
     "尺寸与间距", "排版样式", "视觉样式", "交互状态",
     "内容适配", "图标与图片", "响应式缺陷",
     "对齐与居中", "布局与显隐",
 ]
-LEVEL_FILL = {
-    "高": PatternFill("solid", fgColor="FFC7CE"),
-    "中": PatternFill("solid", fgColor="FFEB9C"),
-    "低": PatternFill("solid", fgColor="C6EFCE"),
-}
+
+
+def _level_fill():
+    """缺陷等级底色（依赖 openpyxl，延迟到 main 内构建，避免模块导入即退出）。
+
+    【F48】旧版把 ``from openpyxl import ...`` 与 ``sys.exit`` 放在模块顶层、
+    ``LEVEL_FILL`` 也在顶层引用 PatternFill——缺 openpyxl 时 **import 本模块**
+    直接 SystemExit，单测 rows_from_report 连带全 ERROR。改为延迟导入：
+    模块始终可导入，仅 CLI 真正导出时缺依赖才提示。
+    """
+    from openpyxl.styles import PatternFill
+    return {
+        "高": PatternFill("solid", fgColor="FFC7CE"),
+        "中": PatternFill("solid", fgColor="FFEB9C"),
+        "低": PatternFill("solid", fgColor="C6EFCE"),
+    }
 
 
 def loc_str(el):
@@ -168,6 +172,13 @@ def pending_rows_from_report(report: dict):
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        sys.exit("缺少 openpyxl：请先执行 pip install openpyxl")
+    LEVEL_FILL = _level_fill()
     report_path = Path(sys.argv[1])
     out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else report_path.parent / "defects.xlsx"
 

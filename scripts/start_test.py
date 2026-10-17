@@ -172,12 +172,18 @@ def main() -> int:
         "environment": environment,
         "notRun": [] if args.safety_policy == "all" else ["caution", "danger"] if args.safety_policy == "safe" else ["danger"] if args.safety_policy == "mockWrites" else ["all interactive actions"],
     }
+    # 【F49】run-manifest 必须落盘，即使环境降级/阻断也不例外——它记录的是本轮的
+    # 安全策略与用户选择（SKILL.md 工作流第 1 步），旧版在 needs_setup/unavailable
+    # 分支直接 return 且 manifest=None，安全留痕随环境缺失一起蒸发。
+    workdir.mkdir(parents=True, exist_ok=True)
+    manifest_path = workdir / "run-manifest.json"
     if env_state in ("unavailable", "needs_setup"):
         manifest["environmentGate"] = {
             "state": env_state,
             "verdict": "blocked" if env_state == "unavailable" else "degraded",
             "note": "环境检查未通过（%s）——依赖缺失时不得以 ready 状态放行正式测试" % env_state,
         }
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         result.update({
             "status": "blocked" if env_state == "unavailable" else "degraded",
             "reason": "environment_%s" % env_state,
@@ -185,15 +191,13 @@ def main() -> int:
                 env_state,
                 "缺不可用依赖，正式测试被阻断；请先补齐依赖" if env_state == "unavailable"
                 else "部分依赖未就绪，可降级执行但产物需标注环境降级"),
-            "manifest": None,
+            "manifest": str(manifest_path),
             "environment": environment,
             "safetyPolicy": args.safety_policy,
         })
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 3 if env_state == "unavailable" else 0
     manifest["environmentGate"] = {"state": env_state, "verdict": "pass"}
-    workdir.mkdir(parents=True, exist_ok=True)
-    manifest_path = workdir / "run-manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     result.update({"status": "ready", "manifest": str(manifest_path), "environment": environment, "safetyPolicy": args.safety_policy})
     print(json.dumps(result, ensure_ascii=False, indent=2))

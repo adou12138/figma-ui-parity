@@ -34,7 +34,7 @@
 | 7.22 | 按钮可用性与点击生效 | `button-audit.md` | `run_button_audit.cjs` |
 | 7.23 | 元素双向盘点（设计稿有页面无 / 页面有设计稿无） | `button-audit.md` | `compare_fields.py` |
 | 7.24 | 图片与插画适配（比例失真 / 裁剪 / 加载失败） | `bug-driven-checks.md` | `extra_checks.js` |
-| 7.25 | 暗色模式与主题切换 | `bug-driven-checks.md` | `extra_checks.js` |
+| 7.25 | 暗色模式与主题切换 | `bug-driven-checks.md` | `extra_checks.js`、`run_state_scenarios.cjs` |
 | 7.26 | 打印与导出视图 | `bug-driven-checks.md` | `run_state_scenarios.cjs` |
 | 7.27 | 多行文本截断与省略 | `bug-driven-checks.md` | `extra_checks.js` |
 | 7.28 | 表单控件细节（placeholder / caret / autocomplete） | `bug-driven-checks.md` | `extra_checks.js` |
