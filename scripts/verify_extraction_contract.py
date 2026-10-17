@@ -45,7 +45,14 @@ def load(path):
 
 def count_of(obj, key):
     v = obj.get(key) if isinstance(obj, dict) else None
-    return len(v) if isinstance(v, list) else 0
+    # 【审查修复·P2】tables 键是数字（querySelectorAll(...).length），此前只对
+    # list 求 len——数字键恒落 0，两路径真实漂移也被 0==0 静默放行，契约校验
+    # 对该键形同虚设。数字与列表同口径计数。
+    if isinstance(v, list):
+        return len(v)
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return int(v)
+    return 0
 
 
 def main():

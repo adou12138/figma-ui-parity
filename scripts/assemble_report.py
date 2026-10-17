@@ -55,10 +55,20 @@ def _read_json(path: Path):
 
 
 def _findings_list(payload) -> list:
-    """findings 类产物兼容两种形状：{findings:[...]} 或直接 [...]。"""
+    """findings 类产物兼容两种形状：{findings:[...]} 或直接 [...]。
+
+    【审查修复·P1】另认 ``violations`` 键（assert_constraints 的产出形状）：
+    此前 constraints.json 经 --findings 传入但只读 findings 键——7.4 的违规
+    条目全部丢失，defects 里有 7.4、checks 里 7.4 却 notRun（与本文件
+    docstring 记载的历史 bug 同款自相矛盾）。violations 条目自带
+    dimension/status/symptom，与 findings 条目同构，直接并入。
+    """
     if isinstance(payload, dict):
-        items = payload.get("findings")
-        return items if isinstance(items, list) else []
+        for key in ("findings", "violations"):
+            items = payload.get(key)
+            if isinstance(items, list) and items:
+                return items
+        return []
     return payload if isinstance(payload, list) else []
 
 
@@ -160,7 +170,18 @@ DEFECT_TO_GATE = {"confirmed": "fail", "pending": "pending", "dataMissing": "dat
 def collect_findings(path: Path, evidence: dict) -> None:
     """extra_checks / runtime_observability / journeys 的 findings 产物。"""
     payload = _read_json(path)
-    for f in _findings_list(payload):
+    items = _findings_list(payload)
+    # 【审查修复·P1】assert_constraints 跑了且无违规（violations 空列表）≠ 没跑：
+    # 不补 pass 证据的话 7.4 仍落 notRun（"无产物覆盖该维度"），与实际执行矛盾。
+    # 产物条目的 dimension 固定为 "7.4"（assert_constraints 生产侧同款硬编码）。
+    if (isinstance(payload, dict) and isinstance(payload.get("violations"), list)
+            and not items):
+        evidence.setdefault("7.4", []).append({
+            "status": "pass", "source": path.name,
+            "detail": "约束断言已执行，无违规条目",
+        })
+        return
+    for f in items:
         if not isinstance(f, dict):
             continue
         dim = str(f.get("dimension") or "")
@@ -290,6 +311,12 @@ def main() -> int:
             elif isinstance(value, list):
                 existing = {str(e["id"]): e for e in value
                             if isinstance(e, dict) and e.get("id")}
+            # 【审查修复·P1】同一 container 内多键并存时首命中即停，与
+            # coverage_gate.extract_checks 的读取序（checks 优先）严格同向——
+            # 此后命中者无条件覆盖，手写 checks 会被 dimensionResults 整体
+            # 顶掉，与两处门禁的优先级判定互相矛盾。
+            if existing:
+                break
         if existing:
             break
 
@@ -315,9 +342,11 @@ def main() -> int:
             produced += 1
             not_run += 1
 
-    report.setdefault("meta", {})
-    if isinstance(report["meta"], dict):
-        report["meta"]["checks"] = checks
+    # 【审查修复·P2】meta 为显式 null 时 setdefault 不覆盖 → checks 静默不写入
+    # （--write 落盘缺 checks，下游 coverage_gate 读到全维度缺失）。
+    if not isinstance(report.get("meta"), dict):
+        report["meta"] = {}
+    report["meta"]["checks"] = checks
     if args.write:
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

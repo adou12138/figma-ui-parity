@@ -108,10 +108,12 @@ def main() -> int:
         "notExecutedDimensions": [d["id"] for d in dims if d["id"] in checks and status_of(checks[d["id"]])[0] in NOT_EXECUTED],
     }
 
-    report.setdefault("meta", {})
-    if isinstance(report["meta"], dict):
-        report["meta"]["checks"] = checks
-        report["meta"]["coverage"] = coverage
+    # 【审查修复·P2】meta 为显式 null 时 setdefault 不覆盖 → checks/coverage
+    # 静默不写入，--write 落盘的报告缺 checks（下游全维度缺失、rc=5）。
+    if not isinstance(report.get("meta"), dict):
+        report["meta"] = {}
+    report["meta"]["checks"] = checks
+    report["meta"]["coverage"] = coverage
     if args.write:
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 

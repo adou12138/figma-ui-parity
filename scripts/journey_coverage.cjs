@@ -45,13 +45,19 @@ const expected = [];
 for (const st of (journey.states || [])) {
   let bps = journey.breakpoints || [];
   const variant = journey.variants && journey.variants[st.id];
-  if (variant) bps = bps.filter(b => variant.includes(String(b)));
+  // 【审查修复·P2】variants 值按直觉写数字（[1440,768]）时 String(b) 匹配恒
+  // false——该状态所有断点被过滤、expected 缺项、覆盖率虚高。两侧都归一为
+  // 字符串再比较（文档示例是字符串 "1440"，数字笔误常见）。
+  if (variant) bps = bps.filter(b => variant.map(String).includes(String(b)));
   for (const b of bps) expected.push(st.id + '@' + b);
 }
 
 const covered = expected.filter(e => coveredSet.has(e));
 const missing = expected.filter(e => !coveredSet.has(e));
-const rate = expected.length ? +(covered.length / expected.length * 100).toFixed(1) : 100;
+// 【审查修复·P2】expected 为空（journey 定义空/断点全被过滤）时此前恒
+// rate=100 + fullCoverage=true——"没有可覆盖项"被报告成"全覆盖"，掩盖
+// journey 配置错误。改为 0% 且 summary 点名，让空配置显式可见。
+const rate = expected.length ? +(covered.length / expected.length * 100).toFixed(1) : 0;
 
 // 状态级覆盖（任一断点覆盖即算该状态已覆盖）
 const stateIds = (journey.states || []).map(s => s.id);
@@ -63,10 +69,12 @@ const result = {
   coveredCount: covered.length,
   missingCount: missing.length,
   coverageRate: rate,
-  fullCoverage: missing.length === 0,
+  // 【审查修复·P2】空矩阵不得判全覆盖（与上方 rate=0 同源）。
+  fullCoverage: expected.length > 0 && missing.length === 0,
   missingSteps: missing,
   stateCoverage: { total: stateIds.length, covered: stateCovered.length, missing: stateMissing },
-  summary: missing.length === 0 ? '状态旅程全覆盖' : ('缺失 ' + missing.length + ' 个 (状态×断点) 步骤：' + missing.join(', ')),
+  summary: expected.length === 0 ? '期望覆盖矩阵为空（states/breakpoints 缺失或 variants 过滤掉了全部断点），请检查 journey.json'
+    : (missing.length === 0 ? '状态旅程全覆盖' : ('缺失 ' + missing.length + ' 个 (状态×断点) 步骤：' + missing.join(', '))),
 };
 
 console.log(JSON.stringify(result, null, 2));

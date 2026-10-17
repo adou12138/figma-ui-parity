@@ -81,16 +81,36 @@ def is_negated(instruction: str | None) -> bool:
     return False
 
 
+# 【审查修复·P2-17】历史陈述分句不得充当启动触发——
+# 「上个版本走查过了，这次不用再走查」第一分句不含否定词，旧版 positive_clause
+# 原样保留它，TRIGGERS 裸词「走查」命中 ⇒ started=true（已实证：明明在拒绝
+# 重测，门禁却放行）。判定：分句含过去时间词 + 目标词、且不含「继续/重新」
+# 等重启动词 ⇒ 视为历史陈述，从 positive_clause 剔除。
+#   - 「上个版本走查过了，这次不用再走查」→ 两个分句都被剔除 → 拒绝 ✓
+#   - 「继续上次的走查」→ RESUME_WORDS 豁免 → 放行 ✓
+#   - 「已经走查过一半了，继续走查」→ 第一分句剔除、第二分句放行 ✓
+#   - 「上个版本的走查报告在哪」→ 历史咨询，非启动指令 → 不触发 ✓
+PAST_WORDS = re.compile(r"(上个版本|上个迭代|上一次|上次|之前|此前|刚刚|刚才|昨天|前天|上周|上上周|已经|早已|早就)")
+RESUME_WORDS = re.compile(r"(继续|重新|再来|接着|恢复|重启)")
+
+
+def is_historical(clause: str) -> bool:
+    """分句是否为对既往事实的陈述（而非当下的启动指令）。"""
+    return bool(PAST_WORDS.search(clause) and NEGATION_TARGETS.search(clause)
+                and not RESUME_WORDS.search(clause))
+
+
 def positive_clause(instruction: str | None) -> str:
-    """返回含触发词且不含否定的那部分文本（多个分句以空格连接）。
+    """返回含触发词、不含否定且非历史陈述的那部分文本（多个分句以空格连接）。
 
     触发判定同样必须限定在分句内：否定只否定紧随的短语，不能让否定分句里的
-    目标词满足 TRIGGERS。
+    目标词满足 TRIGGERS；历史陈述（P2-17）同理，不能让「上个版本走查过了」
+    这类既往事实充当当下的启动证据。
     """
     if not instruction:
         return ""
     ok = [c.strip() for c in SENTENCE_SPLIT.split(instruction)
-          if c.strip() and not NEGATION.search(c)]
+          if c.strip() and not NEGATION.search(c) and not is_historical(c)]
     return " ".join(ok)
 
 

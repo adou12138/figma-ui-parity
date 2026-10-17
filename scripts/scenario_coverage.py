@@ -271,11 +271,22 @@ def main() -> int:
 
     if not args.enforce:
         return 0
+    # 【审查修复·P2-13】计划为空（scenarios.json 缺失/为空/全部维度被豁免）时，
+    # counted=0、rate=0.0——旧版落入裸比较，报「执行率 0% 低于下限」，把
+    # 「根本没产出计划」误导成「有计划没执行」。空计划是更上游的故障，
+    # 单独拦截并说清根因；此时 min-rate/unexplained 都没有意义。
+    if cov["planned"]["counted"] == 0:
+        print("错误：计划为空——无场景进入分母（scenarios.json 缺失、为空或全部维度被豁免），"
+              "无场景可度量，门禁不放行", file=sys.stderr)
+        return 1
     problems = []
     if cov["notExecuted"]["unexplained"]:
         problems.append("存在未写明原因的未执行场景 {} 条（如 {}）".format(
             len(cov["notExecuted"]["unexplained"]), "、".join(cov["notExecuted"]["unexplained"][:5])))
-    if args.min_rate is not None and cov["executed"]["rate"] < args.min_rate:
+    # 【审查修复·P2-13】门禁比较前判 rate 非 None：rate 当前由 compute 兜底为 0.0，
+    # 但下游（如未来把空计划改为 rate=None）不该靠裸比较 TypeError 崩掉门禁。
+    rate_val = cov["executed"].get("rate")
+    if args.min_rate is not None and rate_val is not None and rate_val < args.min_rate:
         problems.append("场景执行率 {:.0%} 低于下限 {:.0%}，未执行分布：{}".format(
             cov["executed"]["rate"], args.min_rate,
             json.dumps(cov["notExecuted"]["byDimension"], ensure_ascii=False)))

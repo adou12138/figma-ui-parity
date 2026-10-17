@@ -83,5 +83,38 @@ class StartGateTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
 
 
+class TestRound2HistoricalClause(unittest.TestCase):
+    """【审查修复·P2-17】历史陈述分句不得充当启动触发。
+
+    实证：「上个版本走查过了，这次不用再走查」——第一分句无否定词，旧版
+    positive_clause 原样保留，TRIGGERS 裸词「走查」命中 ⇒ started=true。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if str(SCRIPT.parent) not in sys.path:
+            sys.path.insert(0, str(SCRIPT.parent))
+        import start_test
+        cls.st = start_test
+
+    def test_past_statement_plus_refusal_rejected(self):
+        started, reason = self.st.should_start("上个版本走查过了，这次不用再走查", None, [])
+        self.assertFalse(started, "拒绝重测的指令被误判为启动")
+        self.assertEqual(reason, "negated_test_instruction")
+
+    def test_resume_with_past_word_still_starts(self):
+        self.assertTrue(self.st.should_start("继续上次的走查", None, [])[0])
+        self.assertTrue(self.st.should_start("已经走查过一半了，继续走查", None, [])[0])
+
+    def test_past_consult_not_a_start(self):
+        started, reason = self.st.should_start("上个版本的走查报告在哪", None, [])
+        self.assertFalse(started)
+        self.assertEqual(reason, "not_a_test_start")
+
+    def test_negation_then_start_no_regression(self):
+        """第一轮 F43a 语义不回退：否定分句 + 启动分句仍放行。"""
+        self.assertTrue(self.st.should_start("停止响应式适配检查，现在开始 UI Parity", None, [])[0])
+
+
 if __name__ == "__main__":
     unittest.main()

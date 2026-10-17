@@ -91,7 +91,10 @@ if (require.main === module) {
     if (!pw) { console.error('ERROR: playwright-core not found'); process.exit(1); }
     const chrome = resolveChrome();
     const headed = process.argv.includes('--headed');
-    const waitLogin = process.argv.includes('--wait-login');
+    // 【审查修复·P1】此前布尔旗标也叫 waitLogin，遮蔽了顶层的同名异步函数——
+    // line 105 的 waitLogin(page) 实际在调用布尔值，必抛 TypeError，
+    // 「等待人工登录后抓取」功能整体不可用。旗标改名让开。
+    const wantLoginWait = process.argv.includes('--wait-login');
     const profileIdx = process.argv.indexOf('--profile');
     const profile = profileIdx >= 0 ? process.argv[profileIdx + 1] : null;
     let context;
@@ -101,7 +104,7 @@ if (require.main === module) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(e => console.warn('[warn]', e));
     await page.waitForTimeout(4000);
     if (await isLoginPage(page)) {
-      if (!headed && !waitLogin) { console.error('[x] login required (use --headed/--wait-login)'); await context.close(); process.exit(2); }
+      if (!headed && !wantLoginWait) { console.error('[x] login required (use --headed/--wait-login)'); await context.close(); process.exit(2); }
       if (!(await waitLogin(page))) { await context.close(); process.exit(2); }
     }
     const snap = await captureAria(page);

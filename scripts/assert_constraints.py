@@ -47,6 +47,12 @@ def check_axis(rule, rect, frame_w, frame_h, base_rect, base_frame, axis) -> tup
         base_frame_size = base_frame.get("h")
     if None in (a, b, length, base_a, base_len, base_frame_size) or not b:
         return None, None, None
+    # 【审查修复·P1】基准帧宽为 0（基准视口缺 frameWidth 且设计产物 frame.w=0
+    # 的兜底链三连空）时：SCALE 的 base_len/base_frame_size 直接 ZeroDivisionError
+    # 崩掉整个 stage；RIGHT/BOTTOM 的 before = 0-(base_a+base_len) 系统性负偏移
+    # 产出假违规。与当前帧宽 b 同口径拦截，计入 skippedNodes。
+    if not base_frame_size:
+        return None, None, None
     if rule in ("LEFT", "TOP"):
         return abs(a - base_a) <= POSITION_TOLERANCE, base_a, a
     if rule in ("RIGHT", "BOTTOM"):

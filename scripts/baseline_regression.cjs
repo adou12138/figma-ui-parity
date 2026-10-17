@@ -56,14 +56,20 @@ function snapshot(report) {
   };
 }
 
+// 【审查修复·P1】越高越好的指标：这些字段下降才是回归、上升是改善——
+// 与 diff 数/未覆盖数（越低越好）方向相反。此前一律"cur<prev=fixed"，
+// 覆盖率 0.9→0.5 被标"已修复"、pass 计数下降被藏进 fixed，added 清单
+// 反而漏掉最典型的回归信号。
+const HIGHER_IS_BETTER = new Set(['coverageRate', 'verdictCounts.pass']);
+
 function classifyField(key, cur, prev) {
   if (prev == null) return 'new';
   if (cur === prev) return 'unchanged';
-  // 数值越低越好（diff 数、未覆盖）-> 减少=修复，增加=回归
   if (typeof cur === 'number' && typeof prev === 'number') {
-    if (cur < prev) return 'fixed';
-    if (cur > prev) return 'regressed';
-    return 'unchanged';
+    const up = cur > prev;
+    if (HIGHER_IS_BETTER.has(key)) return up ? 'fixed' : 'regressed';
+    // 数值越低越好（diff 数、未覆盖）-> 减少=修复，增加=回归
+    return up ? 'regressed' : 'fixed';
   }
   return cur > prev ? 'regressed' : 'fixed';
 }
@@ -87,7 +93,11 @@ function compare(cur, prev) {
   for (const k of allKeys) {
     const cv = (cur.verdictCounts || {})[k] || 0;
     const pv = (prev.verdictCounts || {})[k] || 0;
-    if (cv !== pv) changes.push({ field: 'verdictCounts.' + k, from: pv, to: cv, status: cv < pv ? 'fixed' : 'regressed' });
+    if (cv !== pv) changes.push({ field: 'verdictCounts.' + k, from: pv, to: cv,
+      // 【审查修复·P1】pass 计数越高越好（与 HIGHER_IS_BETTER 同源）：
+      // 此前 cv<pv 恒标 fixed——pass 下降（最典型回归信号）被藏进已修复清单。
+      status: (k === 'pass' ? (cv > pv ? 'fixed' : 'regressed')
+                            : (cv < pv ? 'fixed' : 'regressed')) });
   }
   const added = changes.filter(c => c.status === 'regressed');
   const fixed = changes.filter(c => c.status === 'fixed');
